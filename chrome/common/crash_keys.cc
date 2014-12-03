@@ -186,11 +186,7 @@ size_t RegisterChromeCrashKeys() {
     const size_t formatted_key_len = sizeof(formatted_keys[0]);
     for (size_t i = 0; i < kSwitchesMaxCount; ++i) {
       // Name the keys using 1-based indexing.
-#ifdef __clang__
-      int n = base::base_snprintf(
-#else
       int n = base::snprintf(
-#endif
           formatted_keys[i], formatted_key_len, kSwitch, i + 1);
       DCHECK_GT(n, 0);
       base::debug::CrashKey crash_key = { formatted_keys[i], kSmallSize };
@@ -204,11 +200,7 @@ size_t RegisterChromeCrashKeys() {
         {{ 0 }};
     const size_t formatted_key_len = sizeof(formatted_keys[0]);
     for (size_t i = 0; i < kExtensionIDMaxCount; ++i) {
-#ifdef __clang__
-      int n = base::base_snprintf(
-#else
       int n = base::snprintf(
-#endif
           formatted_keys[i], formatted_key_len, kExtensionID, i + 1);
       DCHECK_GT(n, 0);
       base::debug::CrashKey crash_key = { formatted_keys[i], kSmallSize };
@@ -223,11 +215,7 @@ size_t RegisterChromeCrashKeys() {
     const size_t formatted_key_len = sizeof(formatted_keys[0]);
     for (size_t i = 0; i < kPrinterInfoCount; ++i) {
       // Key names are 1-indexed.
-#ifdef __clang__
-      int n = base::base_snprintf(
-#else
       int n = base::snprintf(
-#endif
           formatted_keys[i], formatted_key_len, kPrinterInfo, i + 1);
       DCHECK_GT(n, 0);
       base::debug::CrashKey crash_key = { formatted_keys[i], kSmallSize };

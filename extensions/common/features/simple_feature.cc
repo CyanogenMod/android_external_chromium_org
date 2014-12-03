@@ -102,11 +102,7 @@ void ParseEnum(const std::string& string_value,
     // For http://crbug.com/365192.
     char minidump[256];
     base::debug::Alias(&minidump);
-#ifdef __clang__
-    base::base_snprintf(minidump, arraysize(minidump),
-#else
     base::snprintf(minidump, arraysize(minidump),
-#endif
         "e::simple_feature.cc:%d:\"%s\"", __LINE__, string_value.c_str());
     CHECK(false) << string_value;
   }

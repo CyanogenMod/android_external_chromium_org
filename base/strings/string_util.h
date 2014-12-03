@@ -49,23 +49,6 @@ int vsnprintf(char* buffer, size_t size, const char* format, va_list arguments)
 
 // We separate the declaration from the implementation of this inline
 // function just so the PRINTF_FORMAT works.
-
-// NOTE: for clang we need to define a separate function base_snprint because
-// the function snprintf is actually a macro defined in
-// <ndk>/android-L/arch-arm64/usr/include/stdio.h as:
-// #define snprintf(...) __wrap_snprintf(__VA_ARGS__)
-// this causes compilation issues with llvm but works fine with gcc
-#ifdef __clang__
-inline int base_snprintf(char* buffer, size_t size, const char* format, ...)
-    PRINTF_FORMAT(3, 4);
-inline int base_snprintf(char* buffer, size_t size, const char* format, ...) {
-  va_list arguments;
-  va_start(arguments, format);
-  int result = vsnprintf(buffer, size, format, arguments);
-  va_end(arguments);
-  return result;
-}
-#else
 inline int snprintf(char* buffer, size_t size, const char* format, ...)
     PRINTF_FORMAT(3, 4);
 inline int snprintf(char* buffer, size_t size, const char* format, ...) {
@@ -75,7 +58,6 @@ inline int snprintf(char* buffer, size_t size, const char* format, ...) {
   va_end(arguments);
   return result;
 }
-#endif
 
 // BSD-style safe and consistent string copy functions.
 // Copies |src| to |dst|, where |dst_size| is the total allocated size of |dst|.

@@ -85,11 +85,7 @@ class UrlToFilenameEncoderTest : public ::testing::Test {
     // We always suffix the leaf with kEscapeChar, unless the leaf is empty.
     char escaped[100];
     const char escape = UrlToFilenameEncoder::kEscapeChar;
-#ifdef __clang__
-    base::base_snprintf(escaped, sizeof(escaped), "%c%02X%c", escape, ch, escape);
-#else
     base::snprintf(escaped, sizeof(escaped), "%c%02X%c", escape, ch, escape);
-#endif
     Validate(string(1, ch), escaped);
   }
 

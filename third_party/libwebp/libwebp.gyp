@@ -110,11 +110,7 @@
                 '<@(neon_sources)'
               ],
               # avoid an ICE with gcc-4.9: b/15574841
-              'conditions': [
-                ['clang==0', {
-                'cflags': [ '-frename-registers' ],
-                }],
-              ],
+              'cflags': [ '-frename-registers' ],
             },{  # "target_arch != "arm|arm64" or arm_version < 7"
               'type': 'none',
             }],

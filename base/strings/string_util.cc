@@ -480,18 +480,10 @@ string16 FormatBytesUnlocalized(int64 bytes) {
 
   char buf[64];
   if (bytes != 0 && dimension > 0 && unit_amount < 100) {
-#ifdef __clang__
-    base::base_snprintf(buf, arraysize(buf), "%.1lf%s", unit_amount,
-#else
     base::snprintf(buf, arraysize(buf), "%.1lf%s", unit_amount,
-#endif
                    kByteStringsUnlocalized[dimension]);
   } else {
-#ifdef __clang__
-    base::base_snprintf(buf, arraysize(buf), "%.0lf%s", unit_amount,
-#else
     base::snprintf(buf, arraysize(buf), "%.0lf%s", unit_amount,
-#endif
                    kByteStringsUnlocalized[dimension]);
   }
 

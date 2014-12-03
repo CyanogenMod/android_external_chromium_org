@@ -56,11 +56,7 @@ class ByContextFinder : public content::RenderViewVisitor {
 void CheckWithMinidump(const std::string& message) {
   char minidump[1024];
   base::debug::Alias(&minidump);
-#ifdef __clang__
-  base::base_snprintf(
-#else
   base::snprintf(
-#endif
       minidump, arraysize(minidump), "e::console: %s", message.c_str());
   CHECK(false) << message;
 }

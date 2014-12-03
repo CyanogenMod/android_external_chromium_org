@@ -698,11 +698,7 @@ void Dispatcher::OnActivateExtension(const std::string& extension_id) {
     std::string& error = extension_load_errors_[extension_id];
     char minidump[256];
     base::debug::Alias(&minidump);
-#ifdef __clang__
-    base::base_snprintf(minidump,
-#else
     base::snprintf(minidump,
-#endif
                    arraysize(minidump),
                    "e::dispatcher:%s:%s",
                    extension_id.c_str(),
