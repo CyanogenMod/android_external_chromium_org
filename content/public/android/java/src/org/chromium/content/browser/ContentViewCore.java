@@ -2561,6 +2561,9 @@ public class ContentViewCore
     private void showDisambiguationPopup(Rect targetRect, Bitmap zoomedBitmap) {
         mPopupZoomer.setBitmap(zoomedBitmap);
         mPopupZoomer.show(targetRect);
+  //SWE-feature-feature-hide-title-bar
+        mPopupZoomer.setTranslationY(mRenderCoordinates.getContentOffsetYPix());
+  //SWE-feature-feature-hide-title-bar
     }
 
     @SuppressWarnings("unused")
