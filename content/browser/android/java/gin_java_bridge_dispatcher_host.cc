@@ -366,7 +366,7 @@ void GinJavaBridgeDispatcherHost::OnGetMethods(
     return;
   }
   scoped_refptr<GinJavaBoundObject> object(*objects_.Lookup(object_id));
-  if (!object) {
+  if (!object.get()) {
     LOG(ERROR) << "WebView: Unknown object: " << object_id;
     IPC::WriteParam(reply_msg, std::set<std::string>());
     render_frame_host->Send(reply_msg);
@@ -375,7 +375,7 @@ void GinJavaBridgeDispatcherHost::OnGetMethods(
   DCHECK(!HasPendingReply(render_frame_host));
   pending_replies_[render_frame_host] = reply_msg;
   base::PostTaskAndReplyWithResult(
-      g_background_thread.Get().message_loop()->message_loop_proxy(),
+      g_background_thread.Get().message_loop()->message_loop_proxy().get(),
       FROM_HERE,
       base::Bind(&GinJavaBoundObject::GetMethodNames, object),
       base::Bind(&GinJavaBridgeDispatcherHost::SendMethods,
@@ -402,7 +402,7 @@ void GinJavaBridgeDispatcherHost::OnHasMethod(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(render_frame_host);
   scoped_refptr<GinJavaBoundObject> object(*objects_.Lookup(object_id));
-  if (!object) {
+  if (!object.get()) {
     LOG(ERROR) << "WebView: Unknown object: " << object_id;
     IPC::WriteParam(reply_msg, false);
     render_frame_host->Send(reply_msg);
@@ -411,7 +411,7 @@ void GinJavaBridgeDispatcherHost::OnHasMethod(
   DCHECK(!HasPendingReply(render_frame_host));
   pending_replies_[render_frame_host] = reply_msg;
   base::PostTaskAndReplyWithResult(
-      g_background_thread.Get().message_loop()->message_loop_proxy(),
+      g_background_thread.Get().message_loop()->message_loop_proxy().get(),
       FROM_HERE,
       base::Bind(&GinJavaBoundObject::HasMethod, object, method_name),
       base::Bind(&GinJavaBridgeDispatcherHost::SendHasMethodReply,
@@ -439,7 +439,7 @@ void GinJavaBridgeDispatcherHost::OnInvokeMethod(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(render_frame_host);
   scoped_refptr<GinJavaBoundObject> object(*objects_.Lookup(object_id));
-  if (!object) {
+  if (!object.get()) {
     LOG(ERROR) << "WebView: Unknown object: " << object_id;
     base::ListValue result;
     result.Append(base::Value::CreateNullValue());
