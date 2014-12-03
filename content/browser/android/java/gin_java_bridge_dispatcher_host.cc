@@ -202,6 +202,10 @@ void GinJavaBridgeDispatcherHost::RemoveNamedObject(
   if (iter == named_objects_.end())
     return;
 
+  // |name| may come from |named_objects_|. Make a copy of name so that if
+  // |name| is from |named_objects_| it'll be valid after the remove below.
+  const std::string copied_name(name);
+
   scoped_refptr<GinJavaBoundObject> object(*objects_.Lookup(iter->second));
   named_objects_.erase(iter);
   object->RemoveName();
@@ -220,7 +224,7 @@ void GinJavaBridgeDispatcherHost::RemoveNamedObject(
   }
 
   web_contents()->SendToAllFrames(
-      new GinJavaBridgeMsg_RemoveNamedObject(MSG_ROUTING_NONE, name));
+      new GinJavaBridgeMsg_RemoveNamedObject(MSG_ROUTING_NONE, copied_name));
 }
 
 void GinJavaBridgeDispatcherHost::SetAllowObjectContentsInspection(bool allow) {
