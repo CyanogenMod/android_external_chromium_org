@@ -180,6 +180,9 @@ public class WebView extends FrameLayout {
 
     private boolean mInScroll = false;
     private boolean mEnableAccelerator = true;
+// SWE-feature-backgroundtab
+    private boolean mSkipAccelerator = false;
+// SWE-feature-backgroundtab
     private Accelerator mAccelerator = null;
     private ContentReadbackHandler mContentReadbackHandler;
 
@@ -197,12 +200,28 @@ public class WebView extends FrameLayout {
 
     public WebView(Context context, AttributeSet attrs, int defStyle,
             boolean privateBrowsing) {
-        this(context, attrs, defStyle, privateBrowsing, true);
+// SWE-feature-backgroundtab
+        this(context, attrs, defStyle, privateBrowsing, false, true);
+// SWE-feature-backgroundtab
     }
 
+// SWE-feature-backgroundtab
+    public WebView(Context context, AttributeSet attrs, int defStyle,
+            boolean privateBrowsing, boolean backgroundTab) {
+        this(context, attrs, defStyle, privateBrowsing, backgroundTab, true);
+    }
+// SWE-feature-backgroundtab
+
     private WebView(Context context, AttributeSet attrs, int defStyle,
-            boolean privateBrowsing, boolean enableAccelerator) {
+// SWE-feature-backgroundtab
+            boolean privateBrowsing, boolean backgroundTab, boolean enableAccelerator) {
+// SWE-feature-backgroundtab
         super(context, attrs, defStyle);
+// SWE-feature-backgroundtab
+        if (backgroundTab) {
+          mSkipAccelerator = true;
+        }
+// SWE-feature-backgroundtab
         if (context == null) {
             throw new IllegalArgumentException("Invalid context argument");
         }
@@ -222,7 +241,9 @@ public class WebView extends FrameLayout {
         mAwSettings = new AwSettings(context, true, false);
         mAwContents = new AwContents(Engine.getAwBrowserContext(), this, this.getContext() ,new InternalAccessAdapter(),
                            new NativeGLDelegate(), mAwContentsClientProxy, mAwSettings,
-                           new AwContents.DependencyFactory(), mWindowAndroid, privateBrowsing);
+// SWE-feature-backgroundtab
+                           new AwContents.DependencyFactory(), mWindowAndroid, privateBrowsing, backgroundTab);
+// SWE-feature-backgroundtab
         mWebViewHandler = new WebViewHandler(this);
 
         if (AwContents.isUsingSurfaceView() && mWindowAndroid != null) {
@@ -301,7 +322,9 @@ public class WebView extends FrameLayout {
                             Context context, AttributeSet attrs, int defStyle,
                             boolean privateBrowsing) {
                         WebView webView = new WebView(context, attrs, defStyle,
-                                privateBrowsing, false);
+// SWE-feature-backgroundtab
+                                privateBrowsing, false, false);
+// SWE-feature-backgroundtab
                         return webView;
                     }
 
@@ -371,10 +394,13 @@ public class WebView extends FrameLayout {
     public void loadUrl(String url, Map<String, String> headers) {
         if (!url.startsWith("javascript"))
             Log.v(TTFP_TAG, "disable-fast-webview flag:" + AwContents.isFastWebViewDisabled());
-        if (mAccelerator != null) {
+// SWE-feature-backgroundtab
+        if (mAccelerator != null && !mSkipAccelerator) {
             mAccelerator.loadUrl(url, headers);
             return;
         }
+        mSkipAccelerator = false;
+// SWE-feature-backgroundtab
         loadUrlDirectly(url, headers);
     }
 

@@ -341,29 +341,33 @@ void AwContents::Destroy(JNIEnv* env, jobject obj) {
 }
 
 // SWE-feature-incognito
-static jlong Init(JNIEnv* env, jclass, jobject browser_context, jboolean privateBrowsing) {
+// SWE-feature-backgroundtab
+static jlong Init(JNIEnv* env, jclass, jobject browser_context, jboolean privateBrowsing, jboolean backgroundTab) {
   // TODO(joth): Use |browser_context| to get the native BrowserContext, rather
   // than hard-code the default instance lookup here.
-  scoped_ptr<WebContents> web_contents(content::WebContents::Create(
-    content::WebContents::CreateParams(AwBrowserContext::GetDefault())));
   AwBrowserContext* awBrowserContext = AwBrowserContext::GetDefault();
   if (!privateBrowsing) {
-    scoped_ptr<WebContents> web_contents(content::WebContents::Create(
-        content::WebContents::CreateParams(awBrowserContext)));
+    content::WebContents::CreateParams create_params(awBrowserContext);
+    if (backgroundTab)
+      create_params.initially_hidden = true;
+    scoped_ptr<WebContents> web_contents(content::WebContents::Create(create_params));
     // Return an 'uninitialized' instance; most work is deferred until the
     // subsequent SetJavaPeers() call.
     return reinterpret_cast<intptr_t>(new AwContents(web_contents.Pass()));
   } else {
     AwIncognitoBrowserContext* awIncognitoBrowserContext =
       reinterpret_cast<AwIncognitoBrowserContext*> (awBrowserContext->GetDefaultIncognito());
-    scoped_ptr<WebContents> web_contents(content::WebContents::Create(
-      content::WebContents::CreateParams(awIncognitoBrowserContext)));
+    content::WebContents::CreateParams create_params(awIncognitoBrowserContext);
+    if (backgroundTab)
+      create_params.initially_hidden = true;
+    scoped_ptr<WebContents> web_contents(content::WebContents::Create(create_params));
     awIncognitoBrowserContext->AddRef();
     // Return an 'uninitialized' instance; most work is deferred until the
     // subsequent SetJavaPeers() call.
     return reinterpret_cast<intptr_t>(new AwContents(web_contents.Pass()));
   }
 }
+// SWE-feature-backgroundtab
 // SWE-feature-incognito
 
 static void SetAwDrawSWFunctionTable(JNIEnv* env, jclass,

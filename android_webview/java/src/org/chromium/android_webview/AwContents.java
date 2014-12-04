@@ -551,7 +551,9 @@ public class AwContents {
             AwContentsClient contentsClient, AwSettings settings,
             DependencyFactory dependencyFactory) {
          this(browserContext, containerView, context, internalAccessAdapter,
-              nativeGLDelegate, contentsClient, settings, dependencyFactory, null,  false);
+// SWE-feature-backgroundtab
+              nativeGLDelegate, contentsClient, settings, dependencyFactory, null,  false, false);
+// SWE-feature-backgroundtab
     }
 
     /**
@@ -567,7 +569,9 @@ public class AwContents {
             InternalAccessDelegate internalAccessAdapter, NativeGLDelegate nativeGLDelegate,
             AwContentsClient contentsClient, AwSettings settings,
             DependencyFactory dependencyFactory, WindowAndroid windowAndroid,
-            boolean privateBrowsing) {
+// SWE-feature-backgroundtab
+            boolean privateBrowsing, boolean backgroundTab) {
+// SWE-feature-backgroundtab
         mBrowserContext = browserContext;
         mContainerView = containerView;
         mContext = context;
@@ -615,7 +619,9 @@ public class AwContents {
         mContainerView.addOnLayoutChangeListener(mLayoutChangeListener);
 
         mWindowAndroid = windowAndroid;
-        setNewAwContents(nativeInit(browserContext, privateBrowsing), windowAndroid);
+//SWE-feature-backgroundtab
+        setNewAwContents(nativeInit(browserContext, privateBrowsing, backgroundTab), windowAndroid);
+//SWE-feature-backgroundtab
 
         onContainerViewChanged();
     }
@@ -2534,7 +2540,9 @@ public class AwContents {
     //  Native methods
     //--------------------------------------------------------------------------------------------
 
-    private static native long nativeInit(AwBrowserContext browserContext, boolean privateBrowsing );
+//SWE-feature-backgroundtab
+    private static native long nativeInit(AwBrowserContext browserContext, boolean privateBrowsing, boolean backgroundTab );
+//SWE-feature-backgroundtab
     private static native void nativeDestroy(long nativeAwContents);
     private static native void nativeSetAwDrawSWFunctionTable(long functionTablePointer);
     private static native void nativeSetAwDrawGLFunctionTable(long functionTablePointer);
