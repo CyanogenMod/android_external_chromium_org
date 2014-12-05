@@ -122,6 +122,11 @@ class AwContentsClientProxy extends AwContentsClient {
     }
 
     @Override
+    public boolean shouldDownloadFavicon(String url) {
+        return mWebViewClient.shouldDownloadFavicon(mWebView, url);
+    }
+
+    @Override
     public void onUnhandledKeyEvent(KeyEvent event) {
         mWebViewClient.onUnhandledKeyEvent(mWebView, event);
     }

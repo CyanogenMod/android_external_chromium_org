@@ -72,9 +72,11 @@ public class AwWebContentsObserver extends WebContentsObserverAndroid {
             boolean isNavigationToDifferentPage, boolean isFragmentNavigation) {
         // This is here to emulate the Classic WebView firing onPageFinished for main frame
         // navigations where only the hash fragment changes.
-        if (isFragmentNavigation) {
+// SWE-feature-progress-optimization
+        if (isFragmentNavigation && !AwContents.isRunningMultiProcess()) {
             mAwContentsClient.onPageFinished(url);
         }
+// SWE-feature-progress-optimization
     }
 
     @Override

@@ -809,9 +809,20 @@ void AwContents::OnFindResultReceived(int active_ordinal,
       env, obj.obj(), active_ordinal, match_count, finished);
 }
 
+// SWE-feature-progress-optimization
 bool AwContents::ShouldDownloadFavicon(const GURL& icon_url) {
-  return g_should_download_favicons;
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (!isRunningMultiProcess())
+    return g_should_download_favicons;
+  else {
+    ScopedJavaLocalRef<jstring> favicon_url =
+      ConvertUTF8ToJavaString(env, icon_url.spec());
+    return Java_AwContents_shouldDownloadFavicon(env, obj.obj(), favicon_url.obj());
+  }
 }
+// SWE-feature-progress-optimization
 
 void AwContents::OnReceivedIcon(const GURL& icon_url, const SkBitmap& bitmap) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));

@@ -34,6 +34,10 @@ public class WebViewClient {
         return false;
     }
 
+    public boolean shouldDownloadFavicon(WebView view, String url) {
+        return false;
+    }
+
     public void onPageStarted(WebView view, String url, Bitmap favicon) {}
 
     public void onPageFinished(WebView view, String url) {}

@@ -229,6 +229,10 @@ public abstract class AwContentsClient {
 
     public abstract void onNewAsyncBitmap(byte[] data, int size, int width, int height);
 
+    // SWE-feature-progress-optimization
+    public abstract boolean shouldDownloadFavicon(String url);
+    // SWE-feature-progress-optimization
+
     //SWE-feature-hide-title-bar
     public abstract void onOffsetsForFullscreenChanged(float topControlsOffsetYPix,
                                               float contentOffsetYPix,

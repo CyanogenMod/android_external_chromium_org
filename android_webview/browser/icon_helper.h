@@ -14,6 +14,7 @@ class SkBitmap;
 
 namespace content {
 struct FaviconURL;
+struct RenderFrameHost;
 }
 
 namespace gfx {
@@ -47,6 +48,10 @@ class IconHelper : public content::WebContentsObserver {
   virtual void DidStartNavigationToPendingEntry(
       const GURL& url,
       content::NavigationController::ReloadType reload_type) OVERRIDE;
+  virtual void DidStartProvisionalLoadForFrame(content::RenderFrameHost* render_frame_host,
+      const GURL& validated_url,
+      bool is_error_page,
+      bool is_iframe_srcdoc) OVERRIDE;
 
   void DownloadFaviconCallback(
       int id,
@@ -64,6 +69,7 @@ class IconHelper : public content::WebContentsObserver {
 
   typedef uint32 MissingFaviconURLHash;
   base::hash_set<MissingFaviconURLHash> missing_favicon_urls_;
+  bool should_download;
 
   DISALLOW_COPY_AND_ASSIGN(IconHelper);
 };

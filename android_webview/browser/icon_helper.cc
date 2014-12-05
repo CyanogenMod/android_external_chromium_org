@@ -9,6 +9,7 @@
 #include "base/hash.h"
 #include "base/logging.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/favicon_url.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -22,7 +23,10 @@ namespace android_webview {
 IconHelper::IconHelper(WebContents* web_contents)
     : WebContentsObserver(web_contents),
       listener_(NULL),
-      missing_favicon_urls_() {
+      missing_favicon_urls_(),
+// SWE-feature-progress-optimization
+      should_download(false) {
+// SWE-feature-progress-optimization
 }
 
 IconHelper::~IconHelper() {
@@ -67,15 +71,21 @@ void IconHelper::DidUpdateFaviconURL(
 
     switch(i->icon_type) {
       case content::FaviconURL::FAVICON:
-        if ((listener_ && !listener_->ShouldDownloadFavicon(i->icon_url)) ||
-            WasUnableToDownloadFavicon(i->icon_url)) {
-          break;
+// SWE-feature-progress-optimization
+        if (should_download) {
+          if ((listener_ && !listener_->ShouldDownloadFavicon(i->icon_url)) ||
+              WasUnableToDownloadFavicon(i->icon_url)) {
+            break;
+          }
+
+          should_download = false;
+          web_contents()->DownloadImage(i->icon_url,
+              true,  // Is a favicon
+              0,  // No maximum size
+              base::Bind(
+                  &IconHelper::DownloadFaviconCallback, base::Unretained(this)));
         }
-        web_contents()->DownloadImage(i->icon_url,
-            true,  // Is a favicon
-            0,  // No maximum size
-            base::Bind(
-                &IconHelper::DownloadFaviconCallback, base::Unretained(this)));
+// SWE-feature-progress-optimization
         break;
       case content::FaviconURL::TOUCH_ICON:
         if (listener_)
@@ -94,6 +104,18 @@ void IconHelper::DidUpdateFaviconURL(
     }
   }
 }
+
+// SWE-feature-progress-optimization
+ void IconHelper::DidStartProvisionalLoadForFrame(
+    content::RenderFrameHost* render_frame_host,
+    const GURL& validated_url,
+    bool is_error_page,
+    bool is_iframe_srcdoc) {
+    if (!render_frame_host->GetParent()) {
+      should_download = true;
+    }
+ }
+// SWE-feature-progress-optimization
 
 void IconHelper::DidStartNavigationToPendingEntry(
     const GURL& url,

@@ -295,4 +295,11 @@ public class NullContentsClient extends AwContentsClient {
     public void didFirstVisuallyNonEmptyPaint() {
     }
 //SWE-feature-load-notification
+
+// SWE-feature-progress-optimization
+     @Override
+    public boolean shouldDownloadFavicon(String url) {
+        return false;
+    }
+// SWE-feature-progress-optimization
 }

@@ -2109,6 +2109,13 @@ public class AwContents {
         return mNativeGLDelegate.requestDrawGL(canvas, waitForCompletion, mContainerView);
     }
 
+// SWE-feature-progress-optimization
+    @CalledByNative
+    private boolean shouldDownloadFavicon(String url) {
+        return mContentsClient.shouldDownloadFavicon(url);
+    }
+// SWE-feature-progress-optimization
+
     private static final boolean SUPPORTS_ON_ANIMATION =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN;
 
