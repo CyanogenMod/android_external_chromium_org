@@ -175,6 +175,24 @@ public class SWETestBase extends ActivityInstrumentationTestCase2<SWETestMainAct
         });
     }
 
+    protected void pauseWebView(final WebView wv) throws Exception {
+       getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                wv.onPause();
+             }
+        });
+    }
+
+    protected void replaceWebView(final WebView wv) throws Exception {
+       getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                getActivity().replaceWebView(wv);
+             }
+        });
+    }
+
     protected WebBackForwardList saveState(final WebView wv, final Bundle b) throws Exception {
         final AtomicReference<WebBackForwardList> testWebBackForwardList =
                 new AtomicReference<WebBackForwardList>();

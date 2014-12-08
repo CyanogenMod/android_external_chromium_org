@@ -65,4 +65,10 @@ public class SWETestMainActivity extends Activity {
     public WebView createWebView(boolean incognito) {
         return new WebView(this, null, android.R.attr.webViewStyle , incognito);
     }
+
+    public void replaceWebView(WebView wv) {
+        ViewGroup main = (ViewGroup)findViewById(R.id.main);
+        main.removeView(mWebView);
+        main.addView(wv);
+    }
 }
