@@ -67,6 +67,8 @@ void InitLibnetxtPluginApi(LibnetxtPluginApi* plugin_api) {
     LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, GetHttpVersion)
     LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, EnumerateHeader)
     LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, response_code)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, raw_headers)
+    LIBNETXT_API_CPP_PTR_IMP(plugin_api, LibNetXt, net, HttpResponseHeaders, EnumerateHeaderLines)
     LIBNETXT_API_CPP_PTR_IMP_SP_CON(plugin_api, LibNetXt, net, HttpResponseHeaders)
     LIBNETXT_API_CPP_PTR_IMP_SP_DES(plugin_api, LibNetXt, net, HttpResponseHeaders)
 
@@ -127,6 +129,7 @@ void InitLibnetxtPluginApi(LibnetxtPluginApi* plugin_api) {
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, ConvertHeadersBackToHTTPResponse)
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, IsVerboseEnabled)
     LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, GetVerboseLevel)
+    LIBNETXT_API_PTR_IMP(plugin_api, LibNetXt, EscapeForHTML)
 
     //Additional APIs
     InitStatHubLibnetxtPluginApi(plugin_api);

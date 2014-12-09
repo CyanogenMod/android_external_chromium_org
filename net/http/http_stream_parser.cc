@@ -246,7 +246,8 @@ int HttpStreamParser::SendRequest(const std::string& request_line,
   //Add Alternative transport Headers
   alt_transaction_ = AltTransaction::HandleRequest(
           request_->url.spec().c_str(),
-          const_cast<HttpRequestHeaders &>(headers));
+          const_cast<HttpRequestHeaders &>(headers),
+          connection_->socket());
 
   //Shutr only for GET/HEAD requests
   if((!(using_proxy_)) && ((request_line.find(HttpRequestHeaders::kGetMethod) == 0) ||
@@ -864,15 +865,25 @@ int HttpStreamParser::HandleReadHeaderResult(int result) {
     }
   } else {
 
-    //Check Alternative Transport Headers
-    StreamSocket* alt_socket = AltTransaction::HandleResponse(
-            alt_transaction_,
-            *response_->headers.get(),
-            connection_->socket());
-    if (alt_socket) {
-        connection_->ReplaceSocket(alt_socket);
+    if (alt_transaction_ && !alt_transaction_->IsDelayed()) {
+      //Check Alternative Transport Headers
+      StreamSocket* alt_socket = AltTransaction::HandleResponse(
+              alt_transaction_,
+              *response_->headers.get(),
+              connection_->socket());
+      if (alt_socket) {
+          connection_->ReplaceSocket(alt_socket);
+          if (alt_transaction_->IsDelayed()) {
+              //Postpone state change until alternative transaction ir ready
+              response_header_start_offset_ = -1;
+              response_body_length_ = -1;
+              read_buf_->set_offset(0);
+              received_bytes_ = 0;
+              io_state_ = STATE_READ_HEADERS;
+              return OK;
+          }
+      }
     }
-
     CalculateResponseBodySize();
     // If the body is zero length, the caller may not call ReadResponseBody,
     // which is where any extra data is copied to read_buf_, so we move the

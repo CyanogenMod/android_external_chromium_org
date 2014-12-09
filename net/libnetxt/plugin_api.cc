@@ -91,6 +91,8 @@ LIBNETXT_API_CPP_FORWARDER_3(LibNetXt, net, HttpResponseHeaders, GetContentRange
 LIBNETXT_API_CPP_FORWARDER_1(LibNetXt, net, HttpResponseHeaders, AddHeader, void, std::string)
 LIBNETXT_API_CPP_FORWARDER_3(LibNetXt, net, HttpResponseHeaders, EnumerateHeader ,bool, void**, const std::string&, std::string*)
 LIBNETXT_API_CPP_FORWARDER_0(LibNetXt, net, HttpResponseHeaders, response_code, int)
+LIBNETXT_API_CPP_FORWARDER_0(LibNetXt, net, HttpResponseHeaders, raw_headers, const std::string&)
+LIBNETXT_API_CPP_FORWARDER_3(LibNetXt, net, HttpResponseHeaders, EnumerateHeaderLines, bool , void**, std::string*, std::string*)
 
 // ================================ net::HttpByteRange =================================
 LIBNETXT_API_CPP_FORWARDER_CON_0(LibNetXt, net, HttpByteRange)
@@ -130,6 +132,9 @@ LIBNETXT_API_CPP_FORWARDER_CON_3(LibNetXt,logging, LogMessage, const char*,int, 
 LIBNETXT_API_CPP_FORWARDER_DES(LibNetXt,logging, LogMessage)
 
 // ======================================= Common ==============================================
+std::string LIBNETXT_API(EscapeForHTML)(const std::string& text){
+    return net::EscapeForHTML(text);
+}
 
 bool LIBNETXT_API(GetSystemMemoryInfo)(base::SystemMemoryInfoKB* meminfo){
     return base::GetSystemMemoryInfo(meminfo);

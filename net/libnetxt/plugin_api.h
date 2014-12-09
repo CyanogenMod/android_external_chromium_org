@@ -107,6 +107,8 @@ LIBNETXT_API_CPP_DEF_1(LibNetXt, net, HttpResponseHeaders, AddHeader, void, std:
 LIBNETXT_API_CPP_DEF_0(LibNetXt, net, HttpResponseHeaders, GetHttpVersion, net::HttpVersion)
 LIBNETXT_API_CPP_DEF_3(LibNetXt, net, HttpResponseHeaders, EnumerateHeader, bool, void**, const std::string&, std::string*)
 LIBNETXT_API_CPP_DEF_0(LibNetXt, net, HttpResponseHeaders, response_code, int)
+LIBNETXT_API_CPP_DEF_0(LibNetXt, net, HttpResponseHeaders, raw_headers, const std::string&)
+LIBNETXT_API_CPP_DEF_3(LibNetXt, net, HttpResponseHeaders, EnumerateHeaderLines, bool , void**, std::string*, std::string*)
 extern scoped_refptr<net::HttpResponseHeaders>*  LibNetXtscoped_refptr_netHttpResponseHeadersconstructor()  __attribute__ ((visibility ("default"), used));
 extern void LibNetXtscoped_refptr_netHttpResponseHeadersdestructor(scoped_refptr<net::HttpResponseHeaders>* p)  __attribute__ ((visibility ("default"), used));
 LIBNETXT_API_DEF_2(LibNetXt, AssignHttpResponseHeaders, void, scoped_refptr<net::HttpResponseHeaders>*, const net::HttpResponseHeaders*)
@@ -167,5 +169,6 @@ LIBNETXT_API_DEF_1(LibNetXt, PostTask, void, const base::Closure&)
 LIBNETXT_API_DEF_1(LibNetXt, ConvertHeadersBackToHTTPResponse, std::string, const std::string&)
 LIBNETXT_API_DEF_0(LibNetXt, IsVerboseEnabled, bool)
 LIBNETXT_API_DEF_0(LibNetXt, GetVerboseLevel, LibnetxtVerboseLevel)
+LIBNETXT_API_DEF_1(LibNetXt, EscapeForHTML, std::string, const std::string&)
 
 #endif /* PLUGIN_API_H_ */

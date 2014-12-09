@@ -71,7 +71,8 @@ public:
 
     static AltTransaction* HandleRequest(
             const char* url,
-            HttpRequestHeaders& headers);
+            HttpRequestHeaders& headers,
+            StreamSocket* original_socket);
 
     static StreamSocket* HandleResponse(
             AltTransaction* transaction,
@@ -85,6 +86,9 @@ public:
     static void DeleteTransaction(
             AltTransaction* transaction);
 
+    bool IsDelayed() {
+        return delayed_;
+    }
 private:
 
     static void InitOnce();
@@ -93,6 +97,8 @@ private:
     base::MessageLoop* message_loop_;
     alt_transport::TransactionId transaction_id_;
     AltClientSocket* socket_;
+    base::Time start_time_;
+    bool delayed_;
 
 static alt_transport::TransactionId transaction_id_cnt_;
 static bool ready_;

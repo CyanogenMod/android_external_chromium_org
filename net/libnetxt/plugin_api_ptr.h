@@ -44,7 +44,7 @@
 #include "net/libsta/sta_libnetxt_plugin_api_ptr.h"
 
 #define LIBNETXT_API_VERSION_MAJOR 1
-#define LIBNETXT_API_VERSION_MINOR 3
+#define LIBNETXT_API_VERSION_MINOR 4
 
 #if defined( __GNUC__)
     #define LIBNETXT_API_COMP_VERSION GCC
@@ -171,6 +171,16 @@ static LibnetxtPluginApi* GetInstance();
     // ================================ net::HttpResponseHeaders  ====================================
     LIBNETXT_API_CPP_PTR_DEF_3(LibNetXt, net, HttpResponseHeaders, EnumerateHeader, bool, void**, const std::string&, std::string*)
     LIBNETXT_API_CPP_PTR_DEF_0(LibNetXt, net, HttpResponseHeaders, response_code, int)
+
+    // ================================ Libnetxt API version 1.4 ====================================
+
+    // ================================ Common Interface ====================================
+    LIBNETXT_API_PTR_DEF_1(LibNetXt, EscapeForHTML, std::string, const std::string&);
+
+    // ================================ net::HttpResponseHeaders  ====================================
+    LIBNETXT_API_CPP_PTR_DEF_0(LibNetXt, net, HttpResponseHeaders, raw_headers, const std::string&)
+    LIBNETXT_API_CPP_PTR_DEF_3(LibNetXt, net, HttpResponseHeaders, EnumerateHeaderLines, bool , void**, std::string*, std::string*)
+
 };
 
  void sta_assign(scoped_refptr<net::HttpResponseHeaders>* dest , const net::HttpResponseHeaders*  src) __attribute__ ((visibility ("default"), used));

@@ -33,6 +33,8 @@
 #include <ctype.h>
 
 #include "base/synchronization/lock.h"
+#include "net/base/net_errors.h"
+#include "net/http/http_response_headers.h"
 #include "net/libnetxt/dyn_lib_loader.h"
 #include "net/libnetxt/plugin_api.h"
 #include "net/socket/alt_client_socket.h"
@@ -52,10 +54,11 @@ static base::Lock lock_;
 //=========================================================================
 static bool (*DoInit)() = NULL;
 
-static void (*DoHandleRequest)(
+static bool (*DoHandleRequest)(
         alt_transport::TransactionId transaction_id,
         const char* url,
-        net::HttpRequestHeaders& headers) = NULL;
+        net::HttpRequestHeaders& headers,
+        const char* ip) = NULL;
 
 static bool (*DoHandleResponse)(
         alt_transport::TransactionId transaction_id,
@@ -63,10 +66,14 @@ static bool (*DoHandleResponse)(
         net::HttpResponseHeaders& headers,
         alt_transport::event_cb callback) = NULL;
 
-static bool (*DoRead)(
+static int (*DoRead)(
         alt_transport::TransactionId transaction_id,
         char* buf,
         uint32_t buf_size) = NULL;
+
+static void (*DoHandleError)(
+        alt_transport::TransactionId transaction_id,
+        alt_transport::ErrorType error) = NULL;
 
 static void (*DoRelease)(
         alt_transport::TransactionId transaction_id) = NULL;
@@ -80,7 +87,7 @@ static void DoDataReadyCb(alt_transport::TransactionId transaction_id, int32_t s
 }
 
 //=========================================================================
-void TransportEventCb(alt_transport::TransactionId transaction_id, const void* data, int32_t size) {
+void TransportEventCb(alt_transport::TransactionId transaction_id, int32_t size) {
     base::AutoLock l(lock_);
     AltTransactionMapType::iterator iter = alt_transaction_map_.find(transaction_id);
     if (iter != alt_transaction_map_.end() ) {
@@ -91,11 +98,19 @@ void TransportEventCb(alt_transport::TransactionId transaction_id, const void* d
 }
 
 //=========================================================================
+void FirstDataTimeoutCb(alt_transport::TransactionId transaction_id) {
+    if (DoHandleError) {
+        DoHandleError(transaction_id, alt_transport::AltTransErrorConnectionTimeout);
+    }
+}
+
+//=========================================================================
 AltTransaction::AltTransaction(const char* url, base::MessageLoop* message_loop) :
     url_(url),
     message_loop_(message_loop),
     transaction_id_(++transaction_id_cnt_),
-    socket_(NULL) {
+    socket_(NULL),
+    delayed_(false) {
 }
 
 //=========================================================================
@@ -120,6 +135,7 @@ void AltTransaction::InitOnce() {
                 *(void **)(&DoHandleRequest) = LibraryManager::GetLibrarySymbol(fh, "DoHandleRequest", false);
                 *(void **)(&DoRead) = LibraryManager::GetLibrarySymbol(fh, "DoRead", false);
                 *(void **)(&DoHandleResponse) = LibraryManager::GetLibrarySymbol(fh, "DoHandleResponse", false);
+                *(void **)(&DoHandleError) = LibraryManager::GetLibrarySymbol(fh, "DoHandleError", false);
                 *(void **)(&DoRelease) = LibraryManager::GetLibrarySymbol(fh, "DoRelease", false);
             }
             if (DoInit && DoHandleRequest && DoRead && DoHandleResponse && DoRelease) {
@@ -135,14 +151,22 @@ void AltTransaction::InitOnce() {
 //=========================================================================
 AltTransaction* AltTransaction::HandleRequest(
         const char* url,
-        HttpRequestHeaders& headers) {
+        HttpRequestHeaders& headers,
+        StreamSocket* original_socket) {
 
     InitOnce();
+
     if (ready_&& DoHandleRequest && url) {
-        AltTransaction* trans = new AltTransaction(url, base::MessageLoop::current());
-        alt_transaction_map_.insert(std::pair<alt_transport::TransactionId, AltTransaction*>(trans->GetId(), trans));
-        DoHandleRequest(trans->GetId(), url, headers);
-        return trans;
+        AltTransaction* transaction = new AltTransaction(url, base::MessageLoop::current());
+        alt_transaction_map_.insert(std::pair<alt_transport::TransactionId, AltTransaction*>(transaction->GetId(), transaction));
+        net::IPEndPoint ip_end_point;
+        if (original_socket) {
+            original_socket->GetLocalAddress(&ip_end_point);
+        }
+        if (DoHandleRequest(transaction->GetId(), url, headers, ip_end_point.ToStringWithoutPort().c_str())) {
+            transaction->start_time_ = LIBNETXT_API(GetSystemTime)();
+        }
+        return transaction;
     }
     return NULL;
 }
@@ -159,6 +183,15 @@ StreamSocket* AltTransaction::HandleResponse(
         if (DoHandleResponse(transaction->GetId(), transaction->GetUrl().c_str(), headers, &TransportEventCb)) {
             socket = new AltClientSocket(transaction, original_socket);
             transaction->SetSocket(socket);
+            //Start "first data" guard timer
+            transaction->delayed_ = true;
+            uint32_t request_rtt = LIBNETXT_API(GetTimeDeltaInMs)(transaction->start_time_, LIBNETXT_API(GetSystemTime)());
+            if (LIBNETXT_API(IsVerboseEnabled)()) {
+                LIBNETXT_LOGE("AltTransaction::HandleResponse (Tr = %d) - Expected RTT: %d", transaction->GetId(), request_rtt);
+            }
+            transaction->GetMessageLoop()->PostDelayedTask(FROM_HERE ,base::Bind(&FirstDataTimeoutCb, transaction->GetId()),
+                base::TimeDelta::FromMilliseconds(request_rtt * 5));
+                //TBD: base::TimeDelta::FromMilliseconds(11000));
         }
     }
     return socket;
@@ -169,9 +202,16 @@ bool AltTransaction::Read(
         char* buf,
         uint32_t buf_size) {
 
-    base::AutoLock l(lock_);
     if (ready_&& DoRead && buf && buf_size) {
-        return DoRead(GetId(), buf, buf_size);
+        int result;
+        {
+            base::AutoLock l(lock_);
+            result = DoRead(GetId(), buf, buf_size);
+        }
+        if (result > 0) {
+            TransportEventCb(GetId(), result);
+        }
+        return true;
     }
     return false;
 }

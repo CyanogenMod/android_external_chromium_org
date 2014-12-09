@@ -35,8 +35,13 @@
 
 namespace alt_transport {
 
+typedef enum ErrorType {
+    AltTransErrorUndefined,             // 0
+    AltTransErrorConnectionTimeout      // 1
+} ErrorType;
+
 typedef uint32_t TransactionId;
-typedef void(* event_cb)(TransactionId transaction_id, const void* data, int32_t size);
+typedef void(* event_cb)(TransactionId transaction_id, int32_t size);
 
 }  // namespace alt_transport
 
