@@ -30,6 +30,7 @@
 
 package org.codeaurora.swe;
 
+import org.chromium.android_webview.AwSettings;
 import org.chromium.base.CommandLine;
 import org.chromium.base.PathUtils;
 import org.chromium.base.library_loader.LibraryLoader;
@@ -298,6 +299,10 @@ public final class Engine {
 
     protected static AwBrowserContext getAwBrowserContext() {
         return sBrowserContext;
+    }
+
+    public static String getDefaultUserAgent() {
+        return AwSettings.getDefaultUserAgent();
     }
 
     /**
