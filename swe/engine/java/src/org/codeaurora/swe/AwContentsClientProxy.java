@@ -59,6 +59,7 @@ class AwContentsClientProxy extends AwContentsClient {
 
     private WebViewClient mWebViewClient;
     private WebChromeClient mWebChromeClient;
+    private AwContentsClient mAcceleratorClient;
     private final WebView mWebView;
     private AlertDialog mAlertDialog = null;
     private DownloadListener mDownloadListener;
@@ -86,6 +87,10 @@ class AwContentsClientProxy extends AwContentsClient {
             mWebChromeClient = client;
         else
             mWebChromeClient = new WebChromeClient();
+    }
+
+    public void setAcceleratorClient(AwContentsClient client) {
+        mAcceleratorClient = client;
     }
 
     public void setDownloadListener(DownloadListener listener) {
@@ -144,6 +149,9 @@ class AwContentsClientProxy extends AwContentsClient {
     @Override
     public void onProgressChanged(int progress) {
         mWebChromeClient.onProgressChanged(mWebView, progress);
+        if (mAcceleratorClient != null) {
+            mAcceleratorClient.onProgressChanged(progress);
+        }
     }
 
     @Override
@@ -273,12 +281,18 @@ class AwContentsClientProxy extends AwContentsClient {
 
     @Override
     public void onPageStarted(String url) {
+        if (mAcceleratorClient != null) {
+            mAcceleratorClient.onPageStarted(url);
+        }
         mWebViewClient.onPageStarted(mWebView, url, null);
     }
 
     @Override
     public void onPageFinished(String url) {
         mWebViewClient.onPageFinished(mWebView, url);
+        if (mAcceleratorClient != null) {
+            mAcceleratorClient.onPageFinished(url);
+        }
     }
 
     @Override
@@ -352,6 +366,9 @@ class AwContentsClientProxy extends AwContentsClient {
     @Override
     public void onReceivedTitle(String title) {
         mWebChromeClient.onReceivedTitle(mWebView, title);
+        if (mAcceleratorClient != null) {
+            mAcceleratorClient.onReceivedTitle(title);
+        }
     }
 
     private void saveAndDisableZoomControls() {

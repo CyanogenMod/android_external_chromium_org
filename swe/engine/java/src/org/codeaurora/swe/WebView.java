@@ -131,8 +131,6 @@ public class WebView extends FrameLayout {
         public void loadUrl(String url, Map<String, String> headers);
         public void stopLoading();
         public void destroy();
-        public void setWebChromeClient(WebChromeClient client);
-        public void setWebViewClient(WebViewClient client);
         public ContentViewRenderView getRenderTarget();
         public WebView getNewWebViewWithAcceleratorDiabled(Context context, AttributeSet attrs, int defStyle, boolean privateBrowsing);
         public void onPause();
@@ -294,16 +292,6 @@ public class WebView extends FrameLayout {
                     }
 
                     @Override
-                    public void setWebChromeClient(WebChromeClient client) {
-                        setWebChromeClientDirectly(client);
-                    }
-
-                    @Override
-                    public void setWebViewClient(WebViewClient client) {
-                        setWebViewClientDirectly(client);
-                    }
-
-                    @Override
                     public ContentViewRenderView getRenderTarget() {
                         return mRenderTarget;
                     }
@@ -328,6 +316,7 @@ public class WebView extends FrameLayout {
                     }
                 };
                 mAccelerator = (Accelerator)constructor.newInstance(this, webViewDelegate, context, attrs, defStyle, privateBrowsing);
+                mAwContentsClientProxy.setAcceleratorClient(mAccelerator.getAcceleratorClient());
             } catch (Exception e) {
                 Logger.dumpTrace(e);
             }
@@ -588,26 +577,10 @@ public class WebView extends FrameLayout {
     }
 
     public void setWebViewClient(WebViewClient client) {
-        if (mAccelerator != null) {
-            mAccelerator.setWebViewClient(client);
-            return;
-        }
-        setWebViewClientDirectly(client);
-    }
-
-    private void setWebViewClientDirectly(WebViewClient client) {
         mAwContentsClientProxy.setWebViewClient(client);
     }
 
     public void setWebChromeClient(WebChromeClient client) {
-        if (mAccelerator != null) {
-            mAccelerator.setWebChromeClient(client);
-            return;
-        }
-        setWebChromeClientDirectly(client);
-    }
-
-    private void setWebChromeClientDirectly(WebChromeClient client) {
         mAwContentsClientProxy.setWebChromeClient(client);
     }
 

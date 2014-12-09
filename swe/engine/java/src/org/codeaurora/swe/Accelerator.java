@@ -31,13 +31,13 @@
 package org.codeaurora.swe;
 
 import java.util.Map;
+import org.chromium.android_webview.AwContentsClient;
 
 public interface Accelerator {
     public void loadUrl(String url, Map<String, String> headers);
     public void stopLoading();
     public void destroy();
-    public void setWebChromeClient(WebChromeClient client);
-    public void setWebViewClient(WebViewClient client);
+    public AwContentsClient getAcceleratorClient();
     public void onPause();
     public void onResume();
 }
