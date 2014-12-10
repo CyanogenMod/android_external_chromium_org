@@ -4640,6 +4640,9 @@
                   # TODO(eugenis): find a way to reenable this.
                   '-mllvm -asan-globals=0',
                 ],
+                'cflags!': [
+                  '-Wno-vectorizer-no-neon',
+                ],
               }],
               ['android_webview_build==0', {
                 'defines': [
