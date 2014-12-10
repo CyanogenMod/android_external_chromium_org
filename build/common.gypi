@@ -3988,8 +3988,26 @@
                     'cflags!': [
                        '-fstack-protector',  # stack protector is always enabled on arm64.
                     ],
-                  }],
-                ],
+                    'conditions': [
+                      ['clang==1 and clang_use_snapdragon==1', {
+                        'cflags!': [
+                          '-finline-limit=64',
+                        ],
+                        'cflags': [
+                          '-Wno-gnu-folding-constant',
+                          '-mllvm -enable-print-fp-zero-alias',
+                          '-no-integrated-as',
+                          '-mcpu=cortex-a53',
+                          '-B<(android_toolchain)/../',
+                          '-DSNAPDRAGON_CLANG',
+                        ],
+                        'ldflags': [
+                          '-B<(android_toolchain)/../',
+                        ],
+                       }],
+                      ],
+                   }],
+                 ],
               }],
             ],
           }],
@@ -4601,6 +4619,15 @@
                     ],
                     'ldflags': [
                       '-target x86_64-linux-androideabi',
+                    ],
+                  }],
+                  ['target_arch=="arm64"', {
+                    'cflags': [
+                      '-w',
+                      '-target aarch64-linux-androideabi',
+                    ],
+                    'ldflags': [
+                      '-target aarch64-linux-androideabi',
                     ],
                   }],
                 ],
@@ -5727,6 +5754,27 @@
       'make_global_settings': [
         # On Windows, gyp's ninja generator only looks at CC.
         ['CC', '<(make_clang_dir)/bin/clang-cl'],
+      ],
+    }],
+    ['clang==1 and clang_use_snapdragon==1', {
+      'conditions': [
+        ['OS=="android"', {
+          'make_global_settings': [
+            ['CC', '<(target_clang_dir)/bin/clang'],
+            ['CXX', '<(target_clang_dir)/bin/clang++'],
+            ['LINK', '$(CXX)'],
+            ['CC.host', '<(make_clang_dir)/bin/clang'],
+            ['CXX.host', '<(make_clang_dir)/bin/clang++'],
+            ['LINK.host', '<(make_clang_dir)/bin/clang++'],
+          ],
+        }, {
+          'make_global_settings': [
+            ['CC', '<(make_clang_dir)/bin/clang'],
+            ['CXX', '<(make_clang_dir)/bin/clang++'],
+            ['CC.host', '$(CC)'],
+            ['CXX.host', '$(CXX)'],
+          ],
+        }],
       ],
     }],
     ['OS=="android" and clang==0', {

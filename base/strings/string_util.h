@@ -47,8 +47,18 @@ int vsnprintf(char* buffer, size_t size, const char* format, va_list arguments)
 
 // Some of these implementations need to be inlined.
 
+// The definition of snprintf in this file conflicts with the one in
+// third_party/android_tools/ndk/platforms/android-L/arch-arm64/usr/include/stdio.h
+// so we undefine that definition here
+#ifdef SNAPDRAGON_CLANG
+#ifdef snprintf
+#undef snprintf
+#endif
+#endif
+
 // We separate the declaration from the implementation of this inline
 // function just so the PRINTF_FORMAT works.
+
 inline int snprintf(char* buffer, size_t size, const char* format, ...)
     PRINTF_FORMAT(3, 4);
 inline int snprintf(char* buffer, size_t size, const char* format, ...) {
