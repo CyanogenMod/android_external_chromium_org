@@ -105,10 +105,6 @@ public abstract class AwContentsClient {
 
     public abstract void doUpdateVisitedHistory(String url, boolean isReload);
 
-    public abstract void onNewHistoryItem(NavigationEntry entry);
-
-    public abstract void onHistoryItemIndexChanged(NavigationEntry entry, int index);
-
     public abstract void onProgressChanged(int progress);
 
     public abstract AwWebResourceResponse shouldInterceptRequest(

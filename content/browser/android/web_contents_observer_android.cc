@@ -113,35 +113,6 @@ void WebContentsObserverAndroid::DidFailProvisionalLoad(
                       validated_url);
 }
 
-// SWE-feature-history-change-notification
-void WebContentsObserverAndroid::OnAddorChangeNewHistoryItem(NavigationEntryImpl* entry, int index, bool isIndexChange) {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
-  if (obj.is_null())
-    return;
-
-  ScopedJavaLocalRef<jstring> j_url(
-      ConvertUTF8ToJavaString(env, entry->GetURL().spec()));
-  ScopedJavaLocalRef<jstring> j_virtual_url(
-      ConvertUTF8ToJavaString(env, entry->GetVirtualURL().spec()));
-  ScopedJavaLocalRef<jstring> j_original_url(
-      ConvertUTF8ToJavaString(env, entry->GetOriginalRequestURL().spec()));
-  ScopedJavaLocalRef<jstring> j_title(
-      ConvertUTF16ToJavaString(env, entry->GetTitle()));
-  ScopedJavaLocalRef<jstring> j_touch_url(
-      ConvertUTF8ToJavaString(env, entry->GetTouchIconURL().spec()));
-
-  ScopedJavaLocalRef<jobject> j_bitmap;
-  const FaviconStatus& status = entry->GetFavicon();
-  if (status.valid && status.image.ToSkBitmap()->getSize() > 0)
-    j_bitmap = gfx::ConvertToJavaBitmap(status.image.ToSkBitmap());
-
-  Java_WebContentsObserverAndroid_onAddorChangeNewHistoryItem(
-      env,  obj.obj(), index, j_url.obj(), j_virtual_url.obj(),
-      j_original_url.obj(), j_title.obj(), j_bitmap.obj(), j_touch_url.obj(), isIndexChange);
-}
-// SWE-feature-history-change-notification
-
 void WebContentsObserverAndroid::DidFailLoad(
     RenderFrameHost* render_frame_host,
     const GURL& validated_url,

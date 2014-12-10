@@ -64,7 +64,6 @@ class AwContentsClientProxy extends AwContentsClient {
     private AlertDialog mAlertDialog = null;
     private DownloadListener mDownloadListener;
     private FindListener mFindListener;
-    private WebBackForwardListClient mWebBackForwardListClient;
     private boolean mZoomControls;
 
     public void setWebViewClient(WebViewClient client) {
@@ -95,14 +94,6 @@ class AwContentsClientProxy extends AwContentsClient {
 
     public void setDownloadListener(DownloadListener listener) {
         mDownloadListener = listener;
-    }
-
-    public void setWebBackForwardListClient(WebBackForwardListClient client) {
-        mWebBackForwardListClient = client;
-    }
-
-    public WebBackForwardListClient getWebBackForwardListClient() {
-        return mWebBackForwardListClient;
     }
 
     public AwContentsClientProxy (WebView webview) {
@@ -326,18 +317,6 @@ class AwContentsClientProxy extends AwContentsClient {
                     contentDisposition, mimeType, contentLength);
             }
         }
-    }
-
-    @Override
-    public void onNewHistoryItem(NavigationEntry entry) {
-        if (mWebBackForwardListClient != null)
-            mWebBackForwardListClient.onNewHistoryItem(new WebHistoryItem(entry));
-    }
-
-    @Override
-    public void onHistoryItemIndexChanged(NavigationEntry entry, int index) {
-        if (mWebBackForwardListClient != null)
-            mWebBackForwardListClient.onIndexChanged(new WebHistoryItem(entry), index);
     }
 
     @Override

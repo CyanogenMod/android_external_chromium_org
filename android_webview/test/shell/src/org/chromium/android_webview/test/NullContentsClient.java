@@ -257,14 +257,6 @@ public class NullContentsClient extends AwContentsClient {
     }
 
     @Override
-    public void onNewHistoryItem(NavigationEntry entry) {
-    }
-
-    @Override
-    public void onHistoryItemIndexChanged(NavigationEntry entry, int index) {
-    }
-
-    @Override
     public void onRendererCrash(boolean crashedWhileOomProtected) {
     }
 

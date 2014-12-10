@@ -71,8 +71,6 @@ class WebContentsObserverAndroid : public WebContentsObserver {
   virtual void DidDetachInterstitialPage() OVERRIDE;
   virtual void DidChangeThemeColor(SkColor color) OVERRIDE;
   virtual void DidChangeLoadProgress(double progress) OVERRIDE;
-  virtual void OnAddorChangeNewHistoryItem(NavigationEntryImpl* entry,
-                             int index, bool isIndexChange) OVERRIDE;
 
   void DidFailLoadInternal(bool is_provisional_load,
                            bool is_main_frame,

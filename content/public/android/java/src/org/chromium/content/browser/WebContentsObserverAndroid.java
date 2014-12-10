@@ -186,14 +186,6 @@ public abstract class WebContentsObserverAndroid {
         }
     }
 
-// SWE-feature-history-change-notification
-    @CalledByNative
-    public void onAddorChangeNewHistoryItem(int index, String url, String virtualUrl,
-            String originalUrl, String title, Bitmap favicon,
-            String touchIconUrl, boolean isIndexChange) {
-    }
-// SWE-feature-history-change-notification
-
     private native long nativeInit(WebContents webContents);
     private native void nativeDestroy(long nativeWebContentsObserverAndroid);
 }

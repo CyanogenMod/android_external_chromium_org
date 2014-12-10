@@ -943,23 +943,6 @@ public class WebView extends FrameLayout {
         return mAwContentsClientProxy.getWebViewClient();
     }
 
-    /**
-     * Set the back/forward list client. This is an implementation of
-     * WebBackForwardListClient for handling new items and changes in the
-     * history index.
-     * @param client An implementation of WebBackForwardListClient.
-     */
-    public void setWebBackForwardListClient(WebBackForwardListClient client) {
-        mAwContentsClientProxy.setWebBackForwardListClient(client);
-    }
-
-    /**
-     * Gets the WebBackForwardListClient.
-     */
-    public WebBackForwardListClient getWebBackForwardListClient() {
-        return mAwContentsClientProxy.getWebBackForwardListClient();
-    }
-
     // This method returns the height of the embedded title bar if one is set via the
     // hidden setEmbeddedTitleBar method.
     public int getVisibleTitleHeight() {
