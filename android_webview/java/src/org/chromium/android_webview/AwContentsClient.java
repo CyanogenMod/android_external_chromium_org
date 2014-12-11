@@ -235,6 +235,13 @@ public abstract class AwContentsClient {
                                               float overdrawBottomHeightPix);
     //SWE-feature-hide-title-bar
 
+    //SWE-feature-load-notification
+    public abstract void documentLoadedInFrame(long frameId,
+                                      boolean isMainFrame);
+
+    public abstract void didFirstVisuallyNonEmptyPaint();
+    //SWE-feature-load-notification
+
     //SWE-feature-reload-tab-oncrash
     public abstract void webContentsConnected();
     //SWE-feature-reload-tab-oncrash

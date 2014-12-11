@@ -19,6 +19,19 @@ public class AwWebContentsObserver extends WebContentsObserverAndroid {
         mAwContentsClient = awContentsClient;
     }
 
+//SWE-feature-load-notification
+    @Override
+    public void documentLoadedInFrame(long frameId,
+                                      boolean isMainFrame) {
+        mAwContentsClient.documentLoadedInFrame(frameId, isMainFrame);
+    }
+
+    @Override
+    public void didFirstVisuallyNonEmptyPaint() {
+        mAwContentsClient.didFirstVisuallyNonEmptyPaint();
+    }
+//SWE-feature-load-notification
+
     @Override
     public void didFinishLoad(long frameId, String validatedUrl, boolean isMainFrame) {
         String unreachableWebDataUrl = AwContentsStatics.getUnreachableWebDataUrl();

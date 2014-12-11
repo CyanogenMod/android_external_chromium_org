@@ -727,6 +727,10 @@ public class WebSettings {
         mAwSettings.setForceUserScalable(forceEnableUserScalable);
     }
 
+    public boolean getForceUserScalable() {
+        return mAwSettings.getForceUserScalable();
+    }
+
     /**
      * Tell the WebView to show the visual indicator
      * @param flag True if the WebView should show the visual indicator

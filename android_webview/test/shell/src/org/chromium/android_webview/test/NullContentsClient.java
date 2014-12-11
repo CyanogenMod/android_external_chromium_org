@@ -286,4 +286,13 @@ public class NullContentsClient extends AwContentsClient {
 
     public void configureForOverlayVideoMode(boolean enable) {
     }
+//SWE-feature-load-notification
+    @Override
+    public void documentLoadedInFrame(long frameId, boolean isMainFrame) {
+    }
+
+    @Override
+    public void didFirstVisuallyNonEmptyPaint() {
+    }
+//SWE-feature-load-notification
 }

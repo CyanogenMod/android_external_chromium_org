@@ -580,4 +580,21 @@ class AwContentsClientProxy extends AwContentsClient {
             contentOffsetYPix, overdrawBottomHeightPix);
     }
 //SWE-feature-hide-title-bar
+
+//SWE-feature-load-notification
+    @Override
+    public void documentLoadedInFrame(long frameId, boolean isMainFrame) {
+        if (mAcceleratorClient != null) {
+            mAcceleratorClient.documentLoadedInFrame(frameId, isMainFrame);
+        }
+    }
+
+    @Override
+    public void didFirstVisuallyNonEmptyPaint() {
+        if (mAcceleratorClient != null) {
+            mAcceleratorClient.didFirstVisuallyNonEmptyPaint();
+        }
+    }
+//SWE-feature-load-notification
+
 }
