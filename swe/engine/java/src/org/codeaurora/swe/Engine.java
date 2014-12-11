@@ -105,7 +105,7 @@ public final class Engine {
         Resources resources = mContext.getResources();
 
         InputStream sweCmdLineStream = null;
-        int sweCmdId =  resources.getIdentifier("swe-command-line", "raw", mContext.getPackageName());
+        int sweCmdId =  resources.getIdentifier("swe_command_line", "raw", mContext.getPackageName());
         if (sweCmdId != 0)
             sweCmdLineStream = resources.openRawResource(sweCmdId);
 
