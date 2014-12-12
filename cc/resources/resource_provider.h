@@ -383,6 +383,10 @@ class CC_EXPORT ResourceProvider {
   // Copy pixels from source to destination.
   void CopyResource(ResourceId source_id, ResourceId dest_id);
 
+#ifdef DO_PARTIAL_RASTERIZATION
+  bool SetupResourceForPartialRasterization(ResourceId source_id, ResourceId copy_from_resource_id);
+#endif
+
   static GLint GetActiveTextureUnit(gpu::gles2::GLES2Interface* gl);
 
 #ifdef DO_PARTIAL_RASTERIZATION

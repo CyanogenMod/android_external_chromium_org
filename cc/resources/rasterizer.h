@@ -86,6 +86,7 @@ class CC_EXPORT RasterTask : public RasterizerTask {
   const Resource* resource() const { return resource_; }
 #ifdef DO_PARTIAL_RASTERIZATION
   const Resource* copy_from_resource() const { return copy_from_resource_; }
+  virtual void SetPartial(bool doCopy, bool doClip) { if (!doCopy) copy_from_resource_ = 0; }
 #endif
   const ImageDecodeTask::Vector& dependencies() const { return dependencies_; }
 

@@ -135,6 +135,14 @@ class RasterTaskImpl : public RasterTask {
   }
 #endif
 
+#ifdef DO_PARTIAL_RASTERIZATION
+  virtual void SetPartial(bool doCopy, bool doClip) {
+    RasterTask::SetPartial(doCopy, doClip);
+    if (!doClip)
+      invalidation_rect_ = content_rect_;
+  }
+#endif
+
  protected:
   virtual ~RasterTaskImpl() { DCHECK(!canvas_); }
 
@@ -215,7 +223,7 @@ class RasterTaskImpl : public RasterTask {
     picture_pile->RasterToBitmap(
         canvas_, content_rect_,
 #ifdef DO_PARTIAL_RASTERIZATION
-        (copy_from_bitmap_) ? invalidation_rect_ : content_rect_,
+        invalidation_rect_,
 #endif
         contents_scale_, stats);
 

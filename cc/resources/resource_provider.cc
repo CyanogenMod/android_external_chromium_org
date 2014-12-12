@@ -534,7 +534,6 @@ SkBitmap* ResourceProvider::GpuRasterBuffer::AccessBuffer() {
   textureDesc.fWidth = resource()->size.width();
   textureDesc.fHeight = resource()->size.height();
   textureDesc.fOrigin = kTopLeft_GrSurfaceOrigin;
-  textureDesc.fFlags = kRenderTarget_GrBackendTextureFlag;
 
   skia::RefPtr<GrTexture> texture = skia::AdoptRef(context->wrapBackendTexture(textureDesc));
 
@@ -2462,6 +2461,37 @@ void ResourceProvider::CopyResource(ResourceId source_id, ResourceId dest_id) {
     memcpy(dest_resource->pixels, source_resource->pixels, bytes);
   }
 }
+
+#ifdef DO_PARTIAL_RASTERIZATION
+bool ResourceProvider::SetupResourceForPartialRasterization(ResourceId source_id, ResourceId copy_from_resource_id) {
+  TRACE_EVENT0("cc", "ResourceProvider::SetupResourceForPartialRasterization");
+
+  Resource* source_resource = GetResource(copy_from_resource_id);
+  Resource* dest_resource = GetResource(source_id);
+
+  GLES2Interface* gl = ContextGL();
+  DCHECK(gl);
+
+  GLenum error = gl->GetError();
+
+  if (dest_resource->gl_id == 0 || source_resource->gl_id == 0)
+    return false;
+
+  gl->CopyTextureCHROMIUM(dest_resource->target,
+    source_resource->gl_id,
+    dest_resource->gl_id,
+    0,
+    GLInternalFormat(dest_resource->format),
+    GLDataType(dest_resource->format));
+
+  error = gl->GetError();
+  if (error != GL_NO_ERROR) {
+    return false;
+  }
+
+  return true;
+}
+#endif
 
 GLint ResourceProvider::GetActiveTextureUnit(GLES2Interface* gl) {
   GLint active_unit = 0;

@@ -27,7 +27,7 @@ class CC_EXPORT GpuRasterWorkerPool : public RasterWorkerPool,
   // Overridden from RasterWorkerPool:
   virtual Rasterizer* AsRasterizer() OVERRIDE;
 #ifdef DO_PARTIAL_RASTERIZATION
-  bool SupportPartialRasterization() { return false; }
+  bool SupportPartialRasterization() { return true; }
 #endif
   // Overridden from Rasterizer:
   virtual void SetClient(RasterizerClient* client) OVERRIDE;

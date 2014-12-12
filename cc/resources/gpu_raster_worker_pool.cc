@@ -149,6 +149,14 @@ void GpuRasterWorkerPool::CheckForCompletedTasks() {
 }
 
 SkCanvas* GpuRasterWorkerPool::AcquireCanvasForRaster(RasterTask* task) {
+#ifdef DO_PARTIAL_RASTERIZATION
+  if (task->copy_from_resource()) {
+    if (resource_provider_->SetupResourceForPartialRasterization(task->resource()->id(), task->copy_from_resource()->id()))
+      task->SetPartial(false, true);
+    else
+      task->SetPartial(false, false);
+  }
+#endif
   return resource_provider_->MapGpuRasterBuffer(task->resource()->id());
 }
 
@@ -160,7 +168,9 @@ void GpuRasterWorkerPool::ReleaseCanvasForRaster(RasterTask* task) {
 
 SkBitmap* GpuRasterWorkerPool::AcquireCopyFromBitmap(RasterTask* task) {
   if (task->copy_from_resource()) {
-    return resource_provider_->AccessGpuRasterBuffer(task->copy_from_resource()->id());
+    SkBitmap* copy_bitmap = resource_provider_->AccessGpuRasterBuffer(task->copy_from_resource()->id());
+    if (!copy_bitmap) task->SetPartial(false, false);
+    return copy_bitmap;
   }
   return 0;
 }

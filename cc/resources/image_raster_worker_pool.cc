@@ -181,6 +181,7 @@ SkBitmap* ImageRasterWorkerPool::AcquireCopyFromBitmap(RasterTask* task) {
   if (task->copy_from_resource()) {
     ZEROCOPY_LOG_PARTIAL("ImageRasterWorkerPool::AcquireCopyFromBitmap has copy resource");
     SkBitmap* copy_bitmap = resource_provider_->AccessImageRasterBuffer(task->copy_from_resource()->id());
+    if (!copy_bitmap) task->SetPartial(false, false);
     return copy_bitmap;
   }
 
