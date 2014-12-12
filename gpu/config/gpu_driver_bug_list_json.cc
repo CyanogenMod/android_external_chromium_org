@@ -1074,7 +1074,7 @@ LONG_STRING_CONST(
         "type": "android",
         "version": {
           "op": "<=",
-          "value": "5.0.1"
+          "value": "5.0.2"
         }
       },
       "gl_vendor": "NVIDIA.*",
