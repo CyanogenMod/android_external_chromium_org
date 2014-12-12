@@ -46,6 +46,7 @@ LOCAL_SRC_FILES := \
 	android_webview/browser/aw_quota_permission_context.cc \
 	android_webview/browser/aw_request_interceptor.cc \
 	android_webview/browser/aw_resource_context.cc \
+	android_webview/browser/aw_ssl_host_state_delegate.cc \
 	android_webview/browser/aw_web_preferences_populater.cc \
 	android_webview/browser/aw_web_resource_response.cc \
 	android_webview/browser/browser_view_renderer.cc \
