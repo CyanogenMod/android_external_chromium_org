@@ -33,7 +33,7 @@
   package="org.codeaurora.swe.shell"
       >
 
-   <permission android:name="org.chromium.content_shell.permission.SANDBOX"
+   <permission android:name="org.chromium.swe.shell.permission.SANDBOX"
             android:protectionLevel="signature" />
 
 
