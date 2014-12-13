@@ -18,8 +18,8 @@ class RequestDrawGLTracker {
   RequestDrawGLTracker();
   bool ShouldRequestOnNoneUiThread(SharedRendererState* state);
   bool ShouldRequestOnUiThread(SharedRendererState* state);
-  void DidRequestOnUiThread();
   void ResetPending();
+  void SetQueuedFunctorOnUi(SharedRendererState* state);
 
  private:
   base::Lock lock_;
@@ -46,6 +46,9 @@ bool RequestDrawGLTracker::ShouldRequestOnUiThread(SharedRendererState* state) {
     pending_non_ui_->ResetRequestDrawGLCallback();
     pending_non_ui_ = NULL;
   }
+  // At this time, we could have already called RequestDrawGL on the UI thread,
+  // but the corresponding GL mode process hasn't happened yet. In this case,
+  // don't schedule another requestDrawGL on the UI thread.
   if (pending_ui_)
     return false;
   pending_ui_ = state;
@@ -56,6 +59,14 @@ void RequestDrawGLTracker::ResetPending() {
   base::AutoLock lock(lock_);
   pending_non_ui_ = NULL;
   pending_ui_ = NULL;
+}
+
+void RequestDrawGLTracker::SetQueuedFunctorOnUi(SharedRendererState* state) {
+  base::AutoLock lock(lock_);
+  DCHECK(state);
+  DCHECK(pending_ui_ == state || pending_non_ui_ == state);
+  pending_ui_ = state;
+  pending_non_ui_ = NULL;
 }
 
 }  // namespace internal
@@ -119,6 +130,7 @@ void SharedRendererState::ResetRequestDrawGLCallback() {
 void SharedRendererState::ClientRequestDrawGLOnUIThread() {
   DCHECK(ui_loop_->BelongsToCurrentThread());
   ResetRequestDrawGLCallback();
+  g_request_draw_gl_tracker.Get().SetQueuedFunctorOnUi(this);
   if (!client_on_ui_->RequestDrawGL(NULL, false)) {
     g_request_draw_gl_tracker.Get().ResetPending();
     LOG(ERROR) << "Failed to request GL process. Deadlock likely";
