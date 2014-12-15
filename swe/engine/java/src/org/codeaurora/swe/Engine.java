@@ -105,7 +105,13 @@ public final class Engine {
         Resources resources = mContext.getResources();
 
         InputStream sweCmdLineStream = null;
-        int sweCmdId =  resources.getIdentifier("swe_command_line", "raw", mContext.getPackageName());
+        /*
+        *  getResourcePackageName gets the package name used for compiling resources
+        *  This API is handy in cases, when renaming of package is done in AndroidManifest
+        *  using aapt rule.
+        */
+        String packageName =  resources.getResourcePackageName(R.string.default_encoding);
+        int sweCmdId =  resources.getIdentifier("swe_command_line","raw", packageName);
         if (sweCmdId != 0)
             sweCmdLineStream = resources.openRawResource(sweCmdId);
 
