@@ -1232,7 +1232,13 @@ void LayerTreeHostImpl::UpdateTileManagerMemoryPolicy(
           visible_ ?
           policy.priority_cutoff_when_visible :
           gpu::MemoryAllocation::CUTOFF_ALLOW_NOTHING);
-  global_tile_state_.num_resources_limit = policy.num_resources_limit;
+#ifdef DO_ZERO_COPY
+  if (UseZeroCopyTextureUpload())
+    global_tile_state_.num_resources_limit = 200;//swe::GetTextureMemoryLimit();
+  else
+#endif
+    global_tile_state_.num_resources_limit = policy.num_resources_limit;
+
 
   // TODO(reveman): We should avoid keeping around unused resources if
   // possible. crbug.com/224475

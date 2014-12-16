@@ -50,7 +50,7 @@
 
 #define TEXTURE_MEMORY_CREATION_LIMIT_PROPERTY_STRING "persist.swe.texturememorylimit"
 #define ATLAS_CREATION_LIMIT_PROPERTY_STRING "persist.swe.atlaslimit"
-#define DEFAULT_TEXTURE_MEMORY_CREATION_LIMIT 200
+#define DEFAULT_TEXTURE_MEMORY_CREATION_LIMIT 180
 #define DEFAULT_ATLAS_CREATION_LIMIT 20
 
 #ifdef DO_ZERO_COPY_WITH_ATLAS
@@ -181,7 +181,7 @@ bool LoadSWEAdrenoExtLib(const char* libname) {
         ZEROCOPY_LOG("loading function CheckVersion succeeded.");
         bool supported = (s_check_version_func)(TEXTURE_MEMORY_VERSION, TEXTURE_MEMORY_DEFINITION_TO_STRING(TEXTURE_MEMORY_DEFINITION));
         if (supported) {
-          ZEROCOPY_LOG_ERROR("loading %s succeeded", libname);
+          ZEROCOPY_LOG_VERBOSE("loading %s succeeded", libname);
           return true;
         }
       }
@@ -257,6 +257,11 @@ bool PrepareCreateTextureMemory() {
 void ResetLastTextureMemory() {
   TextureMemoryLib* lib = s_texture_memory_lib.Pointer();
   lib->newly_created_texture_.Set(0);
+}
+
+int GetTextureMemoryLimit() {
+  TextureMemoryLib* lib = s_texture_memory_lib.Pointer();
+  return lib->texture_memory_creation_limit_ + (lib->atlas_creation_limit_ * (lib->max_texture_size_.height() - 1));
 }
 
 WebTech::TextureMemory* GetLastTextureMemory() {

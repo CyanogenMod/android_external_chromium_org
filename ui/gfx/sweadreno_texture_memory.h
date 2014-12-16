@@ -80,6 +80,7 @@ void DestroyTextureMemory(WebTech::TextureMemory* texture);
 bool PrepareCreateTextureMemory();
 WebTech::TextureMemory* GetLastTextureMemory();
 void ResetLastTextureMemory();
+int GetTextureMemoryLimit();
 #ifdef DO_ZERO_COPY_WITH_ATLAS
 bool ShouldUseTextureAtlas();
 void GetDesiredAtlasProperties(gfx::Size* atlas_size, gfx::Size* max_texture_size, int* padding);
