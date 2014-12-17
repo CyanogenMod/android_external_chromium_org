@@ -353,6 +353,16 @@ void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
     return;
   }
 
+  // kModeProcessNoContext should never happen because we tear down hardware
+  // in onTrimMemory. However that guarantee is maintained outside of chromium
+  // code. Not notifying shared state in kModeProcessNoContext can lead to
+  // immediate deadlock, which is slightly more catastrophic than leaks or
+  // corruption.
+  if (draw_info->mode == AwDrawGLInfo::kModeProcess ||
+      draw_info->mode == AwDrawGLInfo::kModeProcessNoContext) {
+    shared_renderer_state_.DidDrawGLProcess();
+  }
+
   {
     GLViewRendererManager* manager = GLViewRendererManager::GetInstance();
     base::AutoLock lock(render_thread_lock_);
@@ -369,16 +379,6 @@ void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
 
   if (draw_info->mode == AwDrawGLInfo::kModeProcessNoContext) {
     LOG(ERROR) << "Received unexpected kModeProcessNoContext";
-  }
-
-  // kModeProcessNoContext should never happen because we tear down hardware
-  // in onTrimMemory. However that guarantee is maintained outside of chromium
-  // code. Not notifying shared state in kModeProcessNoContext can lead to
-  // immediate deadlock, which is slightly more catastrophic than leaks or
-  // corruption.
-  if (draw_info->mode == AwDrawGLInfo::kModeProcess ||
-      draw_info->mode == AwDrawGLInfo::kModeProcessNoContext) {
-    shared_renderer_state_.DidDrawGLProcess();
   }
 
   if (shared_renderer_state_.IsInsideHardwareRelease()) {
