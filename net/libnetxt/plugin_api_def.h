@@ -169,6 +169,10 @@
     ret prefix##namesp##type##name(namesp::type* this_ptr, type1 param1, type2 param2, type3 param3, type4 param4) \
         {this_ptr->name(param1, param2, param3, param4);}
 
+#define LIBNETXT_API_CPP_FORWARDER_5(prefix, namesp, type, name, ret, type1, type2, type3, type4, type5) \
+    ret prefix##namesp##type##name(namesp::type* this_ptr, type1 param1, type2 param2, type3 param3, type4 param4, type5 param5) \
+        {return this_ptr->name(param1, param2, param3, param4, param5);}
+
 #define LIBNETXT_API_CPP_DEF_CON_0(prefix, namesp, type) \
     LIBNETXT_API_DEF_0(prefix, namesp##type##constructor, namesp::type*)
 #define LIBNETXT_API_CPP_DEF_CON_1(prefix, namesp, type, type1) \
@@ -355,6 +359,12 @@
 
 #define LIBNETXT_API_PTR_DEF_5(prefix, name, ret, type1, type2, type3, type4, type5) \
     typedef ret (*prefix##name##FunPtr)(type1 param1, type2 param2, type3 param3, type4 param4, type5 param5); \
+    prefix##name##FunPtr prefix##name;
+#define LIBNETXT_API_CPP_PTR_DEF_5(prefix, namesp, type, name, ret, type1, type2, type3, type4, type5) \
+    LIBNETXT_API_PTR_DEF_6(prefix, namesp##type##name, ret, namesp::type*, type1, type2, type3, type4, type5)
+
+#define LIBNETXT_API_PTR_DEF_6(prefix, name, ret, type1, type2, type3, type4, type5, type6) \
+    typedef ret (*prefix##name##FunPtr)(type1 param1, type2 param2, type3 param3, type4 param4, type5 param5, type6 param6); \
     prefix##name##FunPtr prefix##name;
 
 #endif /* PLUGIN_API_DEF_H_ */

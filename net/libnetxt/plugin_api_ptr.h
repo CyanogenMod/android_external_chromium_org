@@ -44,7 +44,7 @@
 #include "net/libsta/sta_libnetxt_plugin_api_ptr.h"
 
 #define LIBNETXT_API_VERSION_MAJOR 1
-#define LIBNETXT_API_VERSION_MINOR 4
+#define LIBNETXT_API_VERSION_MINOR 5
 
 #if defined( __GNUC__)
     #define LIBNETXT_API_COMP_VERSION GCC

@@ -55,10 +55,11 @@ public:
     LIBNETXT_API_CPP_PTR_DEF_1(STA, sta, TransportService, set_accelerator_prefs, void,
             const sta::AcceleratorPreferences&)
 
-    LIBNETXT_API_CPP_PTR_DEF_4(STA,sta, TransportService, GetTransportPoolStats, bool,
+    LIBNETXT_API_CPP_PTR_DEF_5(STA,sta, TransportService, GetTransportPoolStats, bool,
             net::HttpNetworkSession::SocketPoolType ,
             net::HttpNetworkSession* ,
             const net::HostPortPair ,
+            base::DictionaryValue*,
             sta::TransportPoolStats&)
 
     LIBNETXT_API_CPP_PTR_DEF_1(STA, sta, TransportService,GetNetStackProperties, void,

@@ -76,6 +76,7 @@ public:
     virtual bool GetTransportPoolStats(net::HttpNetworkSession::SocketPoolType socketPoolType, //  int pool_type,
                                net::HttpNetworkSession* session,
                                const net::HostPortPair server,
+                               base::DictionaryValue* pool_info,
                                TransportPoolStats& stats) /*const*/;
 
 

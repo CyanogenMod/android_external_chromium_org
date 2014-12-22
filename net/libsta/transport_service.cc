@@ -162,34 +162,36 @@ void TransportService::PrintTransportPoolStats(net::HttpNetworkSession::SocketPo
     }
     ResetState(socketPoolType, session);
 
-    std::string rsp_msg_log;
-
-    int open_connections_group = 0;
-    std::ostringstream ss;
-    std::vector<std::string> group_list;
-    socket_pool->get_group_map(group_list);
-    for (std::vector<string>::iterator it = group_list.begin();it != group_list.end(); ++it) {
-        std::string host_name = *it;
-        net::HostPortPair server = net::HostPortPair::FromString(host_name);
-        if (!GetTransportPoolStats(socketPoolType,session,server,stats) )
-            return;
-        open_connections_group = stats.origin_server_stats_[server].total_socket_counts_[SOCKET_STATE_ACTIVE] + stats.origin_server_stats_[server].total_socket_counts_[SOCKET_STATE_IDLE] + stats.origin_server_stats_[server].total_socket_counts_[SOCKET_STATE_CONNECTING];
-        if (it == group_list.begin()){
-            ss << server.HostForURL() << "(" << open_connections_group << ")";
-        }else{
-            ss << ":" << server.HostForURL() << "(" << open_connections_group << ")";
-        }
-    }
     if (LIBNETXT_IS_VERBOSE) {
+        std::string rsp_msg_log;
+        int open_connections_group = 0;
+        std::ostringstream ss;
+        std::vector<std::string> group_list;
+        socket_pool->get_group_map(group_list);
+        scoped_ptr<base::DictionaryValue> dict(socket_pool->GetInfoAsValue("transport_socket_pool", "transport_socket_pool", true));
+        for (std::vector<string>::iterator it = group_list.begin();it != group_list.end(); ++it) {
+            std::string host_name = *it;
+            net::HostPortPair server = net::HostPortPair::FromString(host_name);
+            if (!GetTransportPoolStats(socketPoolType,session,server,dict.get(), stats) )
+                return;
+            open_connections_group = stats.origin_server_stats_[server].total_socket_counts_[SOCKET_STATE_ACTIVE] + stats.origin_server_stats_[server].total_socket_counts_[SOCKET_STATE_IDLE] + stats.origin_server_stats_[server].total_socket_counts_[SOCKET_STATE_CONNECTING];
+            if (it == group_list.begin()){
+                ss << server.HostForURL() << "(" << open_connections_group << ")";
+            }else{
+                ss << ":" << server.HostForURL() << "(" << open_connections_group << ")";
+            }
+        }
+
         __attribute__((unused)) int open_connections =
                        stats.total_socket_counts_[SOCKET_STATE_ACTIVE] + stats.total_socket_counts_[SOCKET_STATE_IDLE] + stats.total_socket_counts_[SOCKET_STATE_CONNECTING];
-        LIBNETXT_LOGI("STA_ADAPTER_DIAG %s(%d) %s",stats.pool_name_.c_str(),open_connections,ss.str().c_str());
+        LIBNETXT_LOGI("STA_G %s(%d) %s",stats.pool_name_.c_str(),open_connections,ss.str().c_str());
     }
 }
 
 bool TransportService::GetTransportPoolStats(net::HttpNetworkSession::SocketPoolType socketPoolType,
         HttpNetworkSession* session,
         const net::HostPortPair server,
+        base::DictionaryValue* pool_info,
         TransportPoolStats& stats) {
 
     // see base::DictionaryValue* ClientSocketPoolBaseHelper::GetInfoAsValue()
@@ -200,12 +202,10 @@ bool TransportService::GetTransportPoolStats(net::HttpNetworkSession::SocketPool
     DCHECK(!server.host().empty());
     DCHECK(server.port() != 0 );
     DCHECK(!stats.pool_name_.empty());
+    DCHECK(pool_info);
 
     TransportClientSocketPool* socket_pool = session->GetTransportSocketPool(socketPoolType);
     DCHECK(socket_pool);
-
-    scoped_ptr<base::DictionaryValue> dict(socket_pool->GetInfoAsValue("transport_socket_pool", "transport_socket_pool", true));
-    DCHECK(dict);
 
     // get the total values
     // see net::ClientSocketPoolBaseHelper::GetInfoAsValue()
@@ -213,7 +213,7 @@ bool TransportService::GetTransportPoolStats(net::HttpNetworkSession::SocketPool
     base::ListValue* list_val = NULL;
     bool rv = true;
 
-    if (!dict->GetInteger("handed_out_socket_count", &val)){
+    if (!pool_info->GetInteger("handed_out_socket_count", &val)){
         if (LIBNETXT_IS_VERBOSE) {
             LIBNETXT_LOGE("%s socket pool does not have handed_out_socket_count",__FUNCTION__) ;
         }
@@ -221,7 +221,7 @@ bool TransportService::GetTransportPoolStats(net::HttpNetworkSession::SocketPool
     }
     stats.total_socket_counts_[SOCKET_STATE_ACTIVE] = val;
 
-    if (!dict->GetInteger("idle_socket_count", &val)){
+    if (!pool_info->GetInteger("idle_socket_count", &val)){
         if (LIBNETXT_IS_VERBOSE) {
             LIBNETXT_LOGE("%s socket pool does not have idle_socket_count",__FUNCTION__);
         }
@@ -229,7 +229,7 @@ bool TransportService::GetTransportPoolStats(net::HttpNetworkSession::SocketPool
     }
     stats.total_socket_counts_[SOCKET_STATE_IDLE] = val;
 
-    if (!dict->GetInteger("connecting_socket_count", &val)){
+    if (!pool_info->GetInteger("connecting_socket_count", &val)){
         if (LIBNETXT_IS_VERBOSE) {
               LIBNETXT_LOGE("%s socket pool does not have connecting_socket_count",__FUNCTION__);
         }
@@ -247,7 +247,7 @@ bool TransportService::GetTransportPoolStats(net::HttpNetworkSession::SocketPool
 // group_map might be empty so we need to check first
    if(socket_pool->HasGroup(group_name) ){
        base::DictionaryValue* all_groups_dict;
-       if( !dict->GetDictionary("groups", &all_groups_dict)){
+       if( !pool_info->GetDictionary("groups", &all_groups_dict)){
            if (LIBNETXT_IS_VERBOSE) {
                 LIBNETXT_LOGE("%s socket pool does not have groups",__FUNCTION__);
            }

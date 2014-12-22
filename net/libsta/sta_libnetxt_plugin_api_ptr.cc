@@ -50,7 +50,7 @@ void STAstaTransportServiceset_accelerator_prefs(sta::TransportService* p, const
     p->set_accelerator_prefs(prefs);
 }
 
-LIBNETXT_API_CPP_FORWARDER_4(STA, sta, TransportService, GetTransportPoolStats, bool, net::HttpNetworkSession::SocketPoolType,  net::HttpNetworkSession*, const net::HostPortPair, sta::TransportPoolStats& )
+LIBNETXT_API_CPP_FORWARDER_5(STA, sta, TransportService, GetTransportPoolStats, bool, net::HttpNetworkSession::SocketPoolType,  net::HttpNetworkSession*, const net::HostPortPair, base::DictionaryValue*, sta::TransportPoolStats& )
 LIBNETXT_API_CPP_FORWARDER_3(STA, sta, TransportService, StartTimer, base::Timer*, const sta::TimerType, sta::TimerCallback&, int)
 LIBNETXT_API_CPP_FORWARDER_1V(STA, sta, TransportService, GetNetStackProperties, void, sta::NetStackProperties&)
 LIBNETXT_API_CPP_FORWARDER_2V(STA, sta, TransportService, NotifyAcceleratorEvent, void, const sta::AcceleratorEventType,const std::string  )
