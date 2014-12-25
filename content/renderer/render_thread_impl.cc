@@ -107,6 +107,7 @@
 #include "net/base/net_util.h"
 #include "skia/ext/event_tracer_impl.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebThread.h"
 #include "third_party/WebKit/public/web/WebColorName.h"
 #include "third_party/WebKit/public/web/WebDatabase.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -1624,6 +1625,8 @@ void RenderThreadImpl::OnMemoryPressure(
     SkGraphics::PurgeFontCache();
     SkGraphics::SetFontCacheLimit(font_cache_limit);
   }
+
+  blink::WebCache::pruneAll();
 }
 
 scoped_refptr<base::MessageLoopProxy>
