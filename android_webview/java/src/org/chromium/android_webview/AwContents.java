@@ -1743,6 +1743,8 @@ public class AwContents {
         if (!isUsingSurfaceView()) {
             mTemporarilyDetached = false;
             mAwViewMethods.onAttachedToWindow();
+        } else {
+          mContentViewCore.onAttachedToWindow();
         }
 // SWE-feature-surfaceview
     }
@@ -1755,6 +1757,8 @@ public class AwContents {
 // SWE-feature-surfaceview
         if (mNativeAwContents != 0 && !isUsingSurfaceView()) {
             mAwViewMethods.onDetachedFromWindow();
+        } else {
+          mContentViewCore.onDetachedFromWindow();
         }
 // SWE-feature-surfaceview
     }
