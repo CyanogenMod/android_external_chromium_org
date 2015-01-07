@@ -44,7 +44,7 @@ import java.io.FileOutputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 
 import junit.framework.Assert;
 
@@ -63,7 +63,7 @@ public class CommandLineManagerTest extends SWETestBase {
     public String userCommandLineFile = "";
 
     private InputStream convertStringToInputStream(String commandLine) {
-        InputStream stream = new ByteArrayInputStream(commandLine.getBytes(StandardCharsets.UTF_8));
+        InputStream stream = new ByteArrayInputStream(commandLine.getBytes(Charset.forName("UTF-8")));
         return stream;
     }
 
