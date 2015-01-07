@@ -51,10 +51,8 @@ public class HttpAuthHandlerProxy extends HttpAuthHandler {
 
     @Override
     public boolean useHttpAuthUsernamePassword() {
-        String[] result = mWebView.getHttpAuthUsernamePassword(mHost, mRealm);
-        if (result == null)
-            return false;
-        return true;
+        return (mHandler.isFirstAttempt() &&
+                mWebView.getHttpAuthUsernamePassword(mHost, mRealm) != null);
     }
 
     @Override
@@ -64,7 +62,6 @@ public class HttpAuthHandlerProxy extends HttpAuthHandler {
 
     @Override
     public void proceed(String username, String password) {
-        mWebView.setHttpAuthUsernamePassword(mHost, mRealm, username, password);
         mHandler.proceed(username, password);
     }
 
