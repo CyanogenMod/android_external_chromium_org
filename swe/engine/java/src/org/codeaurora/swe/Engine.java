@@ -55,6 +55,7 @@ import org.codeaurora.swe.utils.Logger;
 import android.content.Context;
 import android.content.res.Resources;
 import android.content.SharedPreferences;
+import android.os.AsyncTask;
 import android.util.Log;
 
 import java.io.File;
@@ -171,6 +172,16 @@ public final class Engine {
 
     public static void loadNativeLibraries(Context context) throws ProcessInitException {
         LibraryLoader.ensureInitialized(context, true);
+    }
+
+    public static void warmUpChildProcessAsync(Context context) {
+        new AsyncTask<Context, Void, Boolean>() {
+            @Override
+            protected Boolean doInBackground(Context... contexts) {
+                warmUpChildProcess(contexts[0]);
+                return true;
+            }
+        }.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, context);
     }
 
     public static void warmUpChildProcess(Context context) {
