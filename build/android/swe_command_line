@@ -32,7 +32,7 @@ elif [ $# -eq 1 ] && [ "$1" = '' ] ; then
 else
   # Else set it.
   set -x
-  adb shell "echo 'content_shell $*' > $CMD_LINE_FILE"
+  adb shell "echo 'swe_apk $*' > $CMD_LINE_FILE"
   # Prevent other apps from modifying flags -- this can create security issues.
   adb shell chmod 0664 $CMD_LINE_FILE
 fi
