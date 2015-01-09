@@ -67,7 +67,6 @@ public class AwContentsClientGetDefaultVideoPosterTest extends AwTestBase {
                 createAwTestContainerViewOnMainSync(contentsClient);
         String data = "<html><head><body><video id='video' control src='' /> </body></html>";
         loadDataAsync(testContainerView.getAwContents(), data, "text/html", false);
-        contentsClient.waitForGetDefaultVideoPosterCalled();
     }
 
     @Feature({"AndroidWebView"})
