@@ -14,7 +14,6 @@ class SkBitmap;
 
 namespace content {
 struct FaviconURL;
-struct RenderFrameHost;
 }
 
 namespace gfx {

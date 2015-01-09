@@ -16,6 +16,7 @@
 #include "ui/gfx/size.h"
 
 using content::BrowserThread;
+using content::RenderFrameHost;
 using content::WebContents;
 
 namespace android_webview {
