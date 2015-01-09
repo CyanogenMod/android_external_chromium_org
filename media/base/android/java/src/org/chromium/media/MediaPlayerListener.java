@@ -11,6 +11,8 @@ import android.media.MediaPlayer;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 
+import java.util.ArrayList;
+
 // This class implements all the listener interface for android mediaplayer.
 // Callbacks will be sent to the native class for processing.
 @JNINamespace("media")
@@ -113,10 +115,46 @@ class MediaPlayerListener implements MediaPlayer.OnPreparedListener,
     public void releaseResources() {
         if (mContext != null) {
             // Unregister the wish for audio focus.
-            AudioManager am = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
-            if (am != null) {
-                am.abandonAudioFocus(this);
-            }
+            removeAudioFocusListener(mContext, this);
+        }
+    }
+
+    private static class AudioFocusListener implements AudioManager.OnAudioFocusChangeListener {
+    @Override
+    public void onAudioFocusChange(int focusChange) {
+        //loop through all listeners
+        int size = mAudioFocusListeners.size();
+        for (int i = 0; i < size; ++i) {
+            mAudioFocusListeners.get(i).onAudioFocusChange(focusChange);
+        }
+    }
+    };
+
+    private static AudioFocusListener mAudioFocusListener = new AudioFocusListener();
+
+    private static final java.util.ArrayList<AudioManager.OnAudioFocusChangeListener> mAudioFocusListeners = new java.util.ArrayList<AudioManager.OnAudioFocusChangeListener>();
+    private static void addAudioFocusListener(Context context, AudioManager.OnAudioFocusChangeListener listener) {
+        mAudioFocusListeners.add(listener);
+        if (mAudioFocusListeners.size() != 1)
+            return;
+
+        AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        am.requestAudioFocus(
+                mAudioFocusListener,
+                AudioManager.STREAM_MUSIC,
+                // Request permanent focus.
+                AudioManager.AUDIOFOCUS_GAIN);
+    }
+    private static void removeAudioFocusListener(Context context, AudioManager.OnAudioFocusChangeListener listener) {
+        mAudioFocusListeners.remove(listener);
+
+        if (mAudioFocusListeners.size() > 0)
+            return;
+
+        // Unregister the wish for audio focus.
+        AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        if (am != null) {
+            am.abandonAudioFocus(mAudioFocusListener);
         }
     }
 
@@ -132,13 +170,8 @@ class MediaPlayerListener implements MediaPlayer.OnPreparedListener,
         mediaPlayerBridge.setOnSeekCompleteListener(listener);
         mediaPlayerBridge.setOnVideoSizeChangedListener(listener);
 
-        AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-        am.requestAudioFocus(
-                listener,
-                AudioManager.STREAM_MUSIC,
+        addAudioFocusListener(context, listener);
 
-                // Request permanent focus.
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
         return listener;
     }
 
