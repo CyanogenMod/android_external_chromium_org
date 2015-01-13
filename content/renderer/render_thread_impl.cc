@@ -1610,13 +1610,6 @@ void RenderThreadImpl::OnMemoryPressure(
     if (webkit_platform_support_) {
       // Clear the image cache. Do not call into blink if it is not initialized.
       blink::WebImageCache::clear();
-      // clear the webcore memory cache
-      blink::WebCache::clear();
-      // Purge Skia font cache, by setting it to 0 and then again to the previous
-      // limit.
-      size_t font_cache_limit = SkGraphics::SetFontCacheLimit(0);
-      SkGraphics::PurgeFontCache();
-      SkGraphics::SetFontCacheLimit(font_cache_limit);
     }
 
     // Purge Skia font cache, by setting it to 0 and then again to the previous
