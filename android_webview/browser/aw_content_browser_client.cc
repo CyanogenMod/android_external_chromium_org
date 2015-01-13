@@ -464,6 +464,15 @@ void AwContentBrowserClient::AllowCertificateError(
     bool expired_previous_decision,
     const base::Callback<void(bool)>& callback,
     content::CertificateRequestResultType* result) {
+  if (resource_type != content::RESOURCE_TYPE_MAIN_FRAME) {
+    // A sub-resource has a certificate error.  The user doesn't really
+    // have a context for making the right decision, so block the
+    // request hard, without an alert dialog to allow showing the insecure
+    // content.
+    *result = content::CERTIFICATE_REQUEST_RESULT_TYPE_DENY;
+    return;
+  }
+
   AwContentsClientBridgeBase* client =
       AwContentsClientBridgeBase::FromID(render_process_id, render_frame_id);
   bool cancel_request = true;
