@@ -1680,4 +1680,13 @@ public class WebView extends FrameLayout {
             core.setUseDesktopUserAgent(useDesktop, reloadOnChange);
         }
     }
+
+    public boolean isScrollInProgress() {
+        ContentViewCore core = getContentViewCore();
+        boolean inProgress = false;
+        if (core != null) {
+            inProgress = core.isScrollInProgress();
+        }
+        return inProgress;
+    }
 }
