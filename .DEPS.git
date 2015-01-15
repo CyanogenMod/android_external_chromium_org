@@ -120,7 +120,7 @@ deps = {
     'src/third_party/sfntly/cpp/src':
         Var('git_url') + '/external/sfntly/cpp/src.git@1bdaae8fc788a5ac8936d68bf24f37d977a13dac',
     'src/third_party/skia':
-        Var('webtech_devx_url') + '/skia.git@8c872b556174f9637194d60fda4a60febfca42d5',
+        Var('webtech_devx_url') + '/skia.git@969da8cd49f1259b5a44d25b73c1b2480088dbe3',
     'src/third_party/smhasher/src':
         Var('git_url') + '/external/smhasher.git@e87738e57558e0ec472b2fc3a643b838e5b6e88f',
     'src/third_party/snappy/src':
