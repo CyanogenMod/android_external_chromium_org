@@ -46,6 +46,7 @@ v8.log
 /arm-sysroot
 /base/base_unittests_run.xml
 /breakpad/src/
+/build/android/webtech-tests/
 /build/Debug
 /build/Debug_x64
 /build/gomacc.lock
@@ -206,6 +207,7 @@ v8.log
 /swe/android
 /swe/android-browser
 /swe/browser
+/swe/config
 /swe/fast-webview
 /skia/tools/clusterfuzz-data/
 /sync/sync.xml
