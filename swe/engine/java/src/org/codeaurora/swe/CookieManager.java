@@ -114,7 +114,7 @@ public final class CookieManager {
         mAwCookieManager.setCookie(url, value);
     }
 
-    protected void flushCookieStore() {
+    public void flushCookieStore() {
         mAwCookieManager.flushCookieStore();
     }
 }
