@@ -150,12 +150,16 @@ void GpuRasterWorkerPool::CheckForCompletedTasks() {
 
 SkCanvas* GpuRasterWorkerPool::AcquireCanvasForRaster(RasterTask* task) {
 #ifdef DO_PARTIAL_RASTERIZATION
+#ifdef USE_COPY_TEXTURE_FOR_PARTIAL_RASTER
   if (task->copy_from_resource()) {
     if (resource_provider_->SetupResourceForPartialRasterization(task->resource()->id(), task->copy_from_resource()->id()))
       task->SetPartial(false, true);
     else
       task->SetPartial(false, false);
   }
+#else
+  task->SetPartial(true, true);
+#endif
 #endif
   return resource_provider_->MapGpuRasterBuffer(task->resource()->id());
 }

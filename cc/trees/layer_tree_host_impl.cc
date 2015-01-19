@@ -80,6 +80,12 @@
 
 namespace {
 
+#ifdef DO_PARTIAL_RASTERIZATION
+// Min height and width to support partial rasterization
+const float kPartialMinWidth = 1000;
+const float kPartialMinHeight = 500;
+#endif
+
 // auto brightness control knobs
 const float BRIGHTNESS_LEVEL_MAX = 1.f;
 const float BRIGHTNESS_LEVEL_MIN = 0.5f;
@@ -2224,6 +2230,14 @@ void LayerTreeHostImpl::ReleaseGL() {
 void LayerTreeHostImpl::SetViewportSize(const gfx::Size& device_viewport_size) {
   if (device_viewport_size == device_viewport_size_)
     return;
+
+#ifdef DO_PARTIAL_RASTERIZATION
+  bool support_partial_raster = (device_viewport_size_.height() >
+      kPartialMinHeight && device_viewport_size_.width() > kPartialMinWidth);
+
+  if (tile_manager_)
+    tile_manager_->SetSupportPartialRaster(support_partial_raster);
+#endif
 
   if (pending_tree_)
     active_tree_->SetViewportSizeInvalid();

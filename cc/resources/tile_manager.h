@@ -119,6 +119,11 @@ class CC_EXPORT TileManager : public RasterizerClient,
   const MemoryHistory::Entry& memory_stats_from_last_assign() const {
     return memory_stats_from_last_assign_;
   }
+#ifdef DO_PARTIAL_RASTERIZATION
+  void SetSupportPartialRaster(bool support_partial_raster) {
+    support_partial_raster_ = support_partial_raster;
+  }
+#endif
 
   void InitializeTilesWithResourcesForTesting(const std::vector<Tile*>& tiles) {
     for (size_t i = 0; i < tiles.size(); ++i) {
@@ -273,6 +278,10 @@ class CC_EXPORT TileManager : public RasterizerClient,
   std::vector<scoped_refptr<RasterTask> > orphan_raster_tasks_;
 
   UniqueNotifier ready_to_activate_check_notifier_;
+
+#ifdef DO_PARTIAL_RASTERIZATION
+  bool support_partial_raster_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(TileManager);
 };

@@ -516,7 +516,11 @@ TileManager::TileManager(
       ready_to_activate_check_notifier_(
           task_runner_,
           base::Bind(&TileManager::CheckIfReadyToActivate,
-                     base::Unretained(this))) {
+                     base::Unretained(this)))
+#ifdef DO_PARTIAL_RASTERIZATION
+    , support_partial_raster_(false)
+#endif
+{
   rasterizer_->SetClient(this);
 }
 
@@ -1180,8 +1184,8 @@ scoped_refptr<RasterTask> TileManager::CreateRasterTask(Tile* tile) {
 #ifdef DO_PARTIAL_RASTERIZATION
   const ScopedResource* copy_from_resource = 0;
 
-  Tile* twin =tile->TwinTile();
-  if (twin) {
+  Tile* twin = tile->TwinTile();
+  if (twin && support_partial_raster_) {
     ManagedTileState& twin_mts = twin->managed_state();
     ManagedTileState::TileVersion& tile_version =
         twin_mts.tile_versions[twin_mts.raster_mode];
