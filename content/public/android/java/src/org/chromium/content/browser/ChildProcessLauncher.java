@@ -309,6 +309,15 @@ public class ChildProcessLauncher {
         }
     }
 
+    public static void releaseSpareChildProcess() {
+        synchronized (ChildProcessLauncher.class) {
+            if (sSpareSandboxedConnection != null) {
+                sSpareSandboxedConnection.stop();
+                sSpareSandboxedConnection = null;
+            }
+        }
+    }
+
     private static String getSwitchValue(final String[] commandLine, String switchKey) {
         if (commandLine == null || switchKey == null) {
             return null;

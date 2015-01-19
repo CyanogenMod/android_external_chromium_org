@@ -188,6 +188,10 @@ public final class Engine {
         ChildProcessLauncher.warmUp(context);
     }
 
+    public static void releaseSpareChildProcess() {
+        ChildProcessLauncher.releaseSpareChildProcess();
+    }
+
     public static void initialize(Context context) {
         mIsAsync = false;
         if (sInitialized) {
