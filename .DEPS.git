@@ -154,7 +154,7 @@ deps = {
     'src/tools/swarming_client':
         Var('git_url') + '/external/swarming.client.git@bbf1fcca7932d92cca9d7dab46ea271a7f6d61fb',
     'src/v8':
-        Var('webtech_devx_url') + '/v8.git@4064940924bd2ec02416ffdb4e67740033f09c94',
+        Var('webtech_devx_url') + '/v8.git@e2e2c7c4f1e530deba31b8e04469117bcb021c45',
     'src/third_party/llvm-snapdragon':
         Var('webtech_devx_url') + '/llvm-snapdragon.git@93a66003f531caa201e26ef73ac7b29f7ec48a6f',
     'src/third_party/libsweadrenoext':
