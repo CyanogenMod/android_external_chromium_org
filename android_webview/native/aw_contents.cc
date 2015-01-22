@@ -814,6 +814,9 @@ bool AwContents::ShouldDownloadFavicon(const GURL& icon_url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return false;
+
   if (!isRunningMultiProcess())
     return g_should_download_favicons;
   else {
