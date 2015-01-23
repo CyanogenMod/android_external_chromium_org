@@ -112,11 +112,19 @@ bool log_tickcount = false;
 // Should we pop up fatal debug messages in a dialog?
 bool show_error_dialogs = false;
 
-// An assert handler override specified by the client to be called instead of
-// the debug message dialog and process termination.
-LogAssertHandlerFunction log_assert_handler = NULL;
 // A log message handler that gets notified of every log message we process.
 LogMessageHandlerFunction log_message_handler = NULL;
+
+// An assert handler override specified by the client to be called instead of
+// the debug message dialog and process termination.
+#ifdef PSEUDO_ASSERT
+static void nullAssertHandler(const std::string& str) {
+    LOG(INFO) << "+++ Would Have Asserted [" << str << "]";
+}
+LogAssertHandlerFunction log_assert_handler = nullAssertHandler;
+#else
+LogAssertHandlerFunction log_assert_handler = NULL;
+#endif
 
 // Helper functions to wrap platform differences.
 

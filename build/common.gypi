@@ -1467,6 +1467,10 @@
     # we can build a debug version with acceptable size and performance.
     'android_full_debug%': 0,
 
+    # Pseudo assert mode: Debug build that logs assert messages but does not
+    # cause a purposeful fault.
+    'pseudo_assert%': 0,
+
     # Sets the default version name and code for Android app, by default we
     # do a developer build.
     'android_app_version_name%': 'Developer Build',
@@ -2603,6 +2607,9 @@
         # things when their commandline changes). Nothing should ever read this
         # define.
         'defines': ['CR_CLANG_REVISION=<!(<(DEPTH)/tools/clang/scripts/update.sh --print-revision)'],
+      }],
+      ['pseudo_assert==1', {
+        'defines': ['PSEUDO_ASSERT'],
       }],
       ['enable_rlz==1', {
         'defines': ['ENABLE_RLZ'],
