@@ -290,6 +290,7 @@ void RendererMediaPlayerManager::DidEnterFullscreen(blink::WebFrame* frame) {
 }
 
 void RendererMediaPlayerManager::DidExitFullscreen() {
+  pending_fullscreen_frame_ = NULL;
   fullscreen_frame_ = NULL;
 }
 
