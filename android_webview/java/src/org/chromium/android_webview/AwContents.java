@@ -650,6 +650,7 @@ public class AwContents {
             contentViewCore.initialize(containerView, internalDispatcher, nativeWebContents,
                 windowAndroid);
         }
+        contentViewCore.onAttachedToWindow();
 // SWE-feature-surfaceview
         contentViewCore.addGestureStateListener(gestureStateListener);
         contentViewCore.setContentViewClient(contentViewClient);
