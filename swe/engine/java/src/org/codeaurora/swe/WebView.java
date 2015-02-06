@@ -67,6 +67,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Constructor;
 import java.util.Map;
+import java.util.HashMap;
+import java.util.Set;
+import java.util.Iterator;
 
 @JNINamespace("content")
 public class WebView extends FrameLayout {
@@ -185,6 +188,7 @@ public class WebView extends FrameLayout {
 // SWE-feature-backgroundtab
     private Accelerator mAccelerator = null;
     private ContentReadbackHandler mContentReadbackHandler;
+    private HashMap<GetBitmapCallback, ValueCallback<Bitmap>> hCallback = new HashMap<GetBitmapCallback, ValueCallback<Bitmap>>();
 
     public WebView(Context context) {
         this(context, null);
@@ -360,6 +364,25 @@ public class WebView extends FrameLayout {
         //pages are active and JavaScript keeps running even in
         //the background
         mAwContents.onPause();
+        // Return Null to any pending bitmap callbacks, so there
+        // no dependency on the callback
+        flushPendingBitmapRequests();
+    }
+
+    private void flushPendingBitmapRequests() {
+        // returns null to all callbacks registered to
+        // this Webview
+        Set<GetBitmapCallback> set = hCallback.keySet();
+        Iterator<GetBitmapCallback> i = set.iterator();
+
+        while(i.hasNext()) {
+            GetBitmapCallback mcb= i.next();
+            ValueCallback<Bitmap> cb = hCallback.get(mcb);
+            if  (cb != null) {
+                cb.onReceiveValue(null);
+            }
+        }
+        hCallback.clear();
     }
 
     public void onResume() {
@@ -450,6 +473,7 @@ public class WebView extends FrameLayout {
     }
 
     private void destroyDirectly() {
+        flushPendingBitmapRequests();
         if (AwContents.isUsingSurfaceView() && mWindowAndroid != null) {
             removeView(mRenderTarget);
             mRenderTarget.destroy();
@@ -570,18 +594,22 @@ public class WebView extends FrameLayout {
         return b;
     }
 
-
     public void getContentBitmapAsync(float scale, Rect srcRect,
                                       final ValueCallback<Bitmap> callback) {
         if (!AwContents.isUsingSurfaceView())
             return;
 
-        GetBitmapCallback mycallback = new GetBitmapCallback() {
+        final GetBitmapCallback mycallback = new GetBitmapCallback() {
            @Override
            public void onFinishGetBitmap(Bitmap bitmap) {
-               callback.onReceiveValue(bitmap);
+                if (hCallback.containsKey(this)){
+                    callback.onReceiveValue(bitmap);
+                    hCallback.remove(this);
+                }
            }
         };
+
+        hCallback.put(mycallback, callback);
 
         mContentReadbackHandler.getContentBitmapAsync(scale, srcRect,
                                                       mAwContents.getContentViewCore(),
