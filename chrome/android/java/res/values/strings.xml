@@ -4,7 +4,7 @@
      Use of this source code is governed by a BSD-style license that can be
      found in the LICENSE file.
 -->
-
+<resources>
 <!-- DO NOT ADD STRINGS HERE.
 
     Android chrome strings now live in
@@ -12,5 +12,4 @@
 
     See http://www.chromium.org/developers/design-documents/ui-localization
 -->
-
-<resources/>
+</resources>
