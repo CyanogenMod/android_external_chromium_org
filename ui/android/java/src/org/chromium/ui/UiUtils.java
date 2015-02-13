@@ -8,11 +8,19 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
 import android.util.Log;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
+
+import org.chromium.base.ContentUriUtils;
+
+import java.io.File;
+import java.io.IOException;
 
 /**
  * Utility functions for common Android UI tasks.
@@ -29,6 +37,10 @@ public class UiUtils {
 
     /** The minimum size of the bottom margin below the app to detect a keyboard. */
     private static final float KEYBOARD_DETECT_BOTTOM_THRESHOLD_DP = 100;
+
+    public static final String EXTERNAL_IMAGE_FILE_PATH = "browser-images";
+    // Keep this variable in sync with the value defined in file_paths.xml.
+    public static final String IMAGE_FILE_PATH = "images";
 
     /** A delegate that allows disabling keyboard visibility detection. */
     private static KeyboardShowingDelegate sKeyboardShowingDelegate;
@@ -215,5 +227,46 @@ public class UiUtils {
         } else if (view instanceof SurfaceView) {
             view.setWillNotDraw(!takingScreenshot);
         }
+    }
+
+    /**
+     * Get a directory for the image capture operation. For devices with JB MR2
+     * or latter android versions, the directory is IMAGE_FILE_PATH directory.
+     * For ICS devices, the directory is CAPTURE_IMAGE_DIRECTORY.
+     *
+     * @param context The application context.
+     * @return directory for the captured image to be stored.
+     */
+    public static File getDirectoryForImageCapture(Context context) throws IOException {
+        File path;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            path = new File(context.getFilesDir(), IMAGE_FILE_PATH);
+            if (!path.exists() && !path.mkdir()) {
+                throw new IOException("Folder cannot be created.");
+            }
+        } else {
+            File externalDataDir =
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM);
+            path = new File(
+                    externalDataDir.getAbsolutePath() + File.separator + EXTERNAL_IMAGE_FILE_PATH);
+            if (!path.exists() && !path.mkdirs()) {
+                path = externalDataDir;
+            }
+        }
+        return path;
+    }
+
+    /**
+     * Get a URI for |file| which has the image capture. This function assumes that path of |file|
+     * is based on the result of UiUtils.getDirectoryForImageCapture().
+     *
+     * @param context The application context.
+     * @param file image capture file.
+     * @return URI for |file|.
+     */
+    public static Uri getUriForImageCaptureFile(Context context, File file) {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2
+                ? ContentUriUtils.getContentUriFromFile(context, file)
+                : Uri.fromFile(file);
     }
 }
