@@ -81,12 +81,19 @@ class SuspendedProcessWatcher : public content::RenderProcessHostObserver {
 
  private:
   void StopWatching(content::RenderProcessHost* host) {
-    std::vector<int>::iterator pos = std::find(suspended_processes_.begin(),
-                                               suspended_processes_.end(),
-                                               host->GetID());
-    DCHECK_NE(pos, suspended_processes_.end());
     host->RemoveObserver(this);
-    suspended_processes_.erase(pos);
+    int id = host->GetID();
+    //Remove all entries of this crashing/exiting host in the vector
+    for (std::vector<int>::iterator it = suspended_processes_.begin();
+         it != suspended_processes_.end(); ++it) {
+      content::RenderProcessHost* suspended_host =
+          content::RenderProcessHost::FromID(*it);
+
+      if (suspended_host->GetID() == id) {
+        suspended_processes_.erase(it);
+        it--;
+      }
+    }
   }
 
   std::vector<int /* RenderProcessHost id */> suspended_processes_;
