@@ -350,6 +350,10 @@ public class WebView extends FrameLayout {
         }
     }
 
+    public void pauseVideo() {
+        mAwContents.pauseVideo();
+    }
+
     public void onPause() {
         if (mAccelerator != null) {
             mAccelerator.onPause();

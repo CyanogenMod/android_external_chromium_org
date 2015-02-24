@@ -116,6 +116,7 @@ class AwContents : public FindHelper::Listener,
   void SetViewVisibility(JNIEnv* env, jobject obj, bool visible);
   void SetWindowVisibility(JNIEnv* env, jobject obj, bool visible);
   void SetIsPaused(JNIEnv* env, jobject obj, bool paused);
+  void PauseVideo(JNIEnv* env, jobject obj);
   void OnAttachedToWindow(JNIEnv* env, jobject obj, int w, int h);
   void OnDetachedFromWindow(JNIEnv* env, jobject obj);
   base::android::ScopedJavaLocalRef<jbyteArray> GetOpaqueState(

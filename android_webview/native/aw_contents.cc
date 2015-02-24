@@ -993,6 +993,13 @@ void AwContents::SetIsPaused(JNIEnv* env, jobject obj, bool paused) {
   }
 }
 
+void AwContents::PauseVideo(JNIEnv* env, jobject obj) {
+  ContentViewCore* cvc =
+      ContentViewCore::FromWebContents(web_contents_.get());
+  if (cvc)
+    cvc->PauseVideo();
+}
+
 void AwContents::OnAttachedToWindow(JNIEnv* env, jobject obj, int w, int h) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   browser_view_renderer_.OnAttachedToWindow(w, h);

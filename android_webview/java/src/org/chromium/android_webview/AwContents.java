@@ -1380,6 +1380,10 @@ public class AwContents {
         ContentViewStatics.setWebKitSharedTimersSuspended(false);
     }
 
+    public void pauseVideo() {
+        nativePauseVideo(mNativeAwContents);
+    }
+
     /**
      * @see android.webkit.WebView#onPause()
      */
@@ -2638,4 +2642,6 @@ public class AwContents {
 
     private native void nativePreauthorizePermission(long nativeAwContents, String origin,
             long resources);
+
+    private native void nativePauseVideo(long nativeAwContents);
 }
