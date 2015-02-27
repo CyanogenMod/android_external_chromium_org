@@ -20,6 +20,8 @@
 package org.codeaurora.swe;
 
 import android.os.Handler;
+
+import java.security.Principal;
 import java.security.PrivateKey;
 import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
@@ -32,7 +34,7 @@ import java.security.cert.X509Certificate;
  *
  * @hide
  */
-public class ClientCertRequestHandler extends Handler {
+public abstract class ClientCertRequestHandler {
 
     ClientCertRequestHandler() {
     }
@@ -41,18 +43,6 @@ public class ClientCertRequestHandler extends Handler {
      * Proceed with the specified private key and client certificate chain.
      */
     public void proceed(PrivateKey privateKey, X509Certificate[] chain) {
-    }
-
-    /**
-     * Proceed with the specified private key bytes and client certificate chain.
-     */
-    private void setSslClientCertFromCtx(final long ctx, final byte[][] chainBytes) {
-    }
-
-    /**
-     * Proceed with the specified private key context and client certificate chain.
-     */
-    private void setSslClientCertFromPKCS8(final byte[] key, final byte[][] chainBytes) {
     }
 
     /**
@@ -66,4 +56,12 @@ public class ClientCertRequestHandler extends Handler {
      */
     public void cancel() {
     }
+
+    public abstract String[] getKeyTypes();
+
+    public abstract Principal[] getPrincipals();
+
+    public abstract String getHost();
+
+    public abstract int getPort();
 }

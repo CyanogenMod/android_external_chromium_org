@@ -47,6 +47,7 @@ import android.webkit.WebResourceResponse;
 import android.widget.EditText;
 
 import org.chromium.android_webview.AwContentsClient;
+import org.chromium.android_webview.AwContentsClientBridge;
 import org.chromium.android_webview.AwHttpAuthHandler;
 import org.chromium.android_webview.AwWebResourceResponse;
 import org.chromium.android_webview.JsPromptResultReceiver;
@@ -54,6 +55,8 @@ import org.chromium.android_webview.JsResultReceiver;
 import org.chromium.content.browser.NavigationEntry;
 import org.codeaurora.swe.WebView.FindListener;
 import org.codeaurora.swe.utils.Logger;
+
+import java.security.Principal;
 
 class AwContentsClientProxy extends AwContentsClient {
 
@@ -413,16 +416,18 @@ class AwContentsClientProxy extends AwContentsClient {
 //SWE-feature-reload-tab-oncrash
     }
 
-    //SWE-FIXME Instead try to use AW Client cert request.
-    /*@Override
-    public void onReceivedClientCertRequest(AwClientCertRequestHandler handler,
-                                            String host_and_port) {
-
-        ClientCertRequestHandlerProxy clientCertRequestHandlerProxy =
-                 new ClientCertRequestHandlerProxy(handler, mWebView, host_and_port);
+//SWE-feature-client-certificate
+    @Override
+    public void onReceivedClientCertRequest(
+            final AwContentsClientBridge.ClientCertificateRequestCallback handler,
+            final String[] keyTypes, final Principal[] principals, final String host,
+            final int port) {
+         ClientCertRequestHandlerProxy clientCertRequestHandlerProxy =
+                new ClientCertRequestHandlerProxy(handler, keyTypes, principals, host, port);
         mWebViewClient.onReceivedClientCertRequest(
-               mWebView, clientCertRequestHandlerProxy, host_and_port);
-    }*/
+              mWebView, clientCertRequestHandlerProxy);
+    }
+//SWE-feature-client-certificate
 
     @Override
     public void showFileChooser(ValueCallback<String[]> uploadFilePathsCallback,

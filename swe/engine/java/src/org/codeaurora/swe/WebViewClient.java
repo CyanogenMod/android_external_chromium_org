@@ -160,12 +160,11 @@ public class WebViewClient {
      * @param view The WebView that is initiating the callback.
      * @param handler A ClientCertRequestHandler object that will
      *            handle the user's response.
-     * @param host_and_port The host and port of the requesting server.
      *
      * @hide
      */
     public void onReceivedClientCertRequest(WebView view,
-        ClientCertRequestHandler handler, String host_and_port) {
+        ClientCertRequestHandler handler) {
         handler.cancel();
     }
 
