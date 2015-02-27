@@ -6,8 +6,6 @@
 vars = {
     'git_url':
          'git://codeaurora.org/quic/chrome4sdp',
-    'webtech_devx_url':
-         'https://webtech-devx.qualcomm.com/swe/packages',
 }
 
 deps = {
@@ -34,7 +32,7 @@ deps = {
     'src/testing/gtest':
         Var('git_url') + '/external/googletest.git@4650552ff637bb44ecf7784060091cbed3252211',
     'src/third_party/WebKit':
-        Var('git_url') + '/chromium/blink.git@e771b5adb182b895b48c18495904756eb5075beb',
+        Var('git_url') + '/chromium/blink.git@99fdb1013d22aa877a3e38b1de792b34eafac8a0',
     'src/third_party/WebKit/LayoutTests/w3c/csswg-test':
         Var('git_url') + '/external/w3c/csswg-test.git@f9b9daa33eac525923e941333d389fcb42f9b19f',
     'src/third_party/WebKit/LayoutTests/w3c/web-platform-tests':
@@ -44,7 +42,7 @@ deps = {
     'src/third_party/bidichecker':
         Var('git_url') + '/external/bidichecker/lib.git@97f2aa645b74c28c57eca56992235c79850fa9e0',
     'src/third_party/boringssl/src':
-        Var('git_url') + '/boringssl.git@c3d79605ab06cffa87877bcfe0792f767bde8b90',
+        'https://boringssl.googlesource.com/boringssl.git@c3d79605ab06cffa87877bcfe0792f767bde8b90',
     'src/third_party/brotli/src':
         Var('git_url') + '/external/font-compression-reference.git@6cef49677dc4c650ef6e3f56041e0a41803afa8c',
     'src/third_party/cacheinvalidation/src':
@@ -81,8 +79,6 @@ deps = {
         Var('git_url') + '/external/webrtc/trunk/talk.git@2b6e83698c5fc6eaea277fe0a6714a4fa4dbabe1',
     'src/third_party/libjpeg_turbo':
         Var('git_url') + '/chromium/deps/libjpeg_turbo.git@2ed5319ce40b0ba2cd9b962713ea0ef775781e69',
-    'src/third_party/libnetxt':
-        Var('webtech_devx_url') + '/libnetxt.git@38a00573360f8d9ab4d58869e7a4d4f96344c7b5',
     'src/third_party/libphonenumber/src/phonenumbers':
         Var('git_url') + '/external/libphonenumber/cpp/src/phonenumbers.git@8d8b5b3b2035197795d27573d4cf566b5d9ad689',
     'src/third_party/libphonenumber/src/resources':
@@ -108,7 +104,7 @@ deps = {
     'src/third_party/ots':
         Var('git_url') + '/external/ots.git@98897009f3ea8a5fa3e20a4a74977da7aaa8e61a',
     'src/third_party/pdfium':
-        Var('git_url') + '/pdfium.git@2fd7b0be4473f4c9877fed2c2ade403c71ded395',
+        'https://pdfium.googlesource.com/pdfium.git@2fd7b0be4473f4c9877fed2c2ade403c71ded395',
     'src/third_party/pyftpdlib/src':
         Var('git_url') + '/external/pyftpdlib.git@2be6d65e31c7ee6320d059f581f05ae8d89d7e45',
     'src/third_party/pywebsocket/src':
@@ -120,7 +116,7 @@ deps = {
     'src/third_party/sfntly/cpp/src':
         Var('git_url') + '/external/sfntly/cpp/src.git@1bdaae8fc788a5ac8936d68bf24f37d977a13dac',
     'src/third_party/skia':
-        Var('webtech_devx_url') + '/skia.git@969da8cd49f1259b5a44d25b73c1b2480088dbe3',
+        Var('git_url') + '/skia.git@5a246bb48708cfdbf5b63f8df7e2b09b3704cae4',
     'src/third_party/smhasher/src':
         Var('git_url') + '/external/smhasher.git@e87738e57558e0ec472b2fc3a643b838e5b6e88f',
     'src/third_party/snappy/src':
@@ -154,17 +150,11 @@ deps = {
     'src/tools/swarming_client':
         Var('git_url') + '/external/swarming.client.git@bbf1fcca7932d92cca9d7dab46ea271a7f6d61fb',
     'src/v8':
-        Var('webtech_devx_url') + '/v8.git@4b5e4cd3ee99560da1f77682ea135b1806621abd',
-    'src/third_party/llvm-snapdragon':
-        Var('webtech_devx_url') + '/llvm-snapdragon.git@93a66003f531caa201e26ef73ac7b29f7ec48a6f',
-    'src/third_party/libsweadrenoext':
-        Var('webtech_devx_url') + '/libsweadrenoext.git@7e430efab949c408df72721b9d6fc75556609c2c',
+        Var('git_url') + '/v8/v8.git@f284b29e37d97d7ee9128055862179dcbda7e398',
     'src/swe/browser':
-        Var('git_url') + '/external/android/packages/apps/browser.git@bebbffd38620c5289a3c443858a144df30905f9c',
+        Var('git_url') + '/external/android/packages/apps/browser.git@1a582ff4c6e2046514ed64370d5c3d15ededb6fe',
     'src/swe/android/support/src':
         Var('git_url') + '/external/android/frameworks/support.git@dcac4546f5b4e3db32c1fc931ea9c1c335ebdabb',
-    'src/swe/fast-webview':
-        Var('webtech_devx_url') + '/fast-webview.git@04633dd6ef7dfdbcf9c79bc6bb3ea4ebe2bf6770',
 }
 
 deps_os = {
@@ -385,6 +375,33 @@ hooks = [
     'action':
          [
     'python',
+    'src/build/libnetxt_init.py',
+],
+    'pattern':
+         '.'
+},
+ {
+  'action':
+    [
+    'python',
+        'src/build/libsta_init.py',
+    ],
+    'pattern':
+         '.'
+},
+    {
+    'action':
+         [
+    'python',
+    'src/build/libsweadrenoext_init.py',
+],
+    'pattern':
+         '.'
+},
+    {
+    'action':
+         [
+    'python',
     'src/build/landmines.py'
 ],
     'pattern':
@@ -474,26 +491,6 @@ hooks = [
     'action':
          [
     'python',
-    'src/build/libsweadrenoext_init.py',
-],
-    'pattern':
-         '.'
-},
- {
-  'action':
-    [
-    'python',
-        'src/build/libsta_init.py',
-    ],
-    'pattern':
-         '.'
-},
-
-
-    {
-    'action':
-         [
-    'python',
     'src/chrome/installer/linux/sysroot_scripts/install-debian.wheezy.sysroot.py',
     '--linux-only',
     '--arch=i386'
@@ -502,15 +499,6 @@ hooks = [
          '.',
     'name':
          'sysroot'
-},
-    {
-    'action':
-         [
-    'python',
-    'src/build/libnetxt_init.py',
-],
-    'pattern':
-         '.'
 },
     {
     'action':
@@ -543,6 +531,21 @@ hooks = [
     'src/build/util/lastchange.py',
     '-o',
     'src/build/util/LASTCHANGE'
+],
+    'pattern':
+         '.',
+    'name':
+         'lastchange'
+},
+    {
+    'action':
+         [
+    'python',
+    'src/build/util/lastchange.py',
+    '-s',
+    'src/third_party/WebKit',
+    '-o',
+    'src/build/util/LASTCHANGE.blink'
 ],
     'pattern':
          '.',
@@ -756,18 +759,6 @@ hooks = [
          '\\.sha1',
     'name':
          'apache_win32'
-},
-    {
-    'action':
-         [
-    'python',
-    'src/tools/clang/scripts/update.py',
-    '--setup-snapdragon'
-],
-    'pattern':
-         '.',
-    'name':
-         'clang-snapdragon'
 },
     {
     'action':
