@@ -82,7 +82,7 @@ deps = {
     'src/third_party/libjpeg_turbo':
         Var('git_url') + '/chromium/deps/libjpeg_turbo.git@2ed5319ce40b0ba2cd9b962713ea0ef775781e69',
     'src/third_party/libnetxt':
-        Var('webtech_devx_url') + '/libnetxt.git@601f4fa78ef812bfa6f1d650023df43dcadcf626',
+        Var('webtech_devx_url') + '/libnetxt.git@38a00573360f8d9ab4d58869e7a4d4f96344c7b5',
     'src/third_party/libphonenumber/src/phonenumbers':
         Var('git_url') + '/external/libphonenumber/cpp/src/phonenumbers.git@8d8b5b3b2035197795d27573d4cf566b5d9ad689',
     'src/third_party/libphonenumber/src/resources':
