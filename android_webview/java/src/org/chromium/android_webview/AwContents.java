@@ -52,7 +52,6 @@ import org.chromium.content.browser.ContentViewStatics;
 import org.chromium.content.browser.LoadUrlParams;
 import org.chromium.content.browser.NavigationHistory;
 import org.chromium.content.browser.PageTransitionTypes;
-import org.chromium.content.browser.WebContentsObserverAndroid;
 import org.chromium.content.common.CleanupReference;
 import org.chromium.content_public.Referrer;
 import org.chromium.content_public.browser.GestureStateListener;
@@ -190,7 +189,7 @@ public class AwContents {
     private ContentViewCore mContentViewCore;
     private final AwContentsClient mContentsClient;
     private final AwContentViewClient mContentViewClient;
-    private WebContentsObserverAndroid mWebContentsObserver;
+    private AwWebContentsObserver mWebContentsObserver;
     private final AwContentsClientBridge mContentsClientBridge;
     private final AwWebContentsDelegateAdapter mWebContentsDelegate;
     private final AwContentsIoThreadClient mIoThreadClient;
@@ -214,6 +213,8 @@ public class AwContents {
     private boolean mHasRequestedVisitedHistoryFromClient;
     // TODO(boliu): This should be in a global context, not per webview.
     private final double mDIPScale;
+    // Whether the WebView has attempted to do any load (including uncommitted loads).
+    private boolean mDidAttemptLoad = false;
 
     // The base background color, i.e. not accounting for any CSS body from the current page.
     private int mBaseBackgroundColor = Color.WHITE;
@@ -591,7 +592,7 @@ public class AwContents {
         mLayoutSizer.setDelegate(new AwLayoutSizerDelegate());
         mLayoutSizer.setDIPScale(mDIPScale);
         mWebContentsDelegate = new AwWebContentsDelegateAdapter(
-                contentsClient, mContainerView, mContext);
+                this, contentsClient, mContainerView, mContext);
         mContentsClientBridge = new AwContentsClientBridge(contentsClient,
                 mBrowserContext.getKeyStore(), AwContentsStatics.getClientCertLookupTable());
         mZoomControls = new AwZoomControls(this);
@@ -807,6 +808,9 @@ public class AwContents {
         if (wasViewVisible) setViewVisibilityInternal(true);
         if (wasWindowFocused) onWindowFocusChanged(wasWindowFocused);
         if (wasFocused) onFocusChanged(true, 0, null);
+
+        // Popups are always assumed as having made a load attempt.
+        mDidAttemptLoad = true;
 
         // Restore injected JavaScript interfaces.
         for (Map.Entry<String, Pair<Object, Class>> entry : javascriptInterfaces.entrySet()) {
@@ -1124,6 +1128,19 @@ public class AwContents {
      */
     public String getUrl() {
         String url =  mContentViewCore.getUrl();
+        if (url == null || url.trim().isEmpty()) return null;
+        return url;
+    }
+
+    /**
+     * Gets the last committed URL. It represents the current page that is
+     * displayed in WebContents. It represents the current security context.
+     *
+     * @return The URL of the current page or null if it's empty.
+     */
+    public String getLastCommittedUrl() {
+        if (mNativeAwContents == 0) return null;
+        String url = mContentViewCore.getWebContents().getLastCommittedUrl();
         if (url == null || url.trim().isEmpty()) return null;
         return url;
     }
@@ -1713,6 +1730,11 @@ public class AwContents {
         mContentViewCore.evaluateJavaScriptEvenIfNotYetNavigated(script);
     }
 
+    public boolean hasAccessedInitialDocument() {
+        if (mNativeAwContents == 0) return false;
+        return mContentViewCore.getWebContents().hasAccessedInitialDocument();
+    }
+
     //--------------------------------------------------------------------------------------------
     //  View and ViewGroup method implementations
     //--------------------------------------------------------------------------------------------
@@ -1968,6 +1990,12 @@ public class AwContents {
         return nativeIsSavable(mNativeAwContents);
     }
 // SWE-feature-offline-reading
+
+    public boolean getDidAttemptLoad() {
+        if (mDidAttemptLoad) return mDidAttemptLoad;
+        mDidAttemptLoad = mWebContentsObserver.hasStartedAnyProvisionalLoad();
+        return mDidAttemptLoad;
+    }
 
     //--------------------------------------------------------------------------------------------
     //  Methods called from native via JNI

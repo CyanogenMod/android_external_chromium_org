@@ -13,6 +13,7 @@ import org.chromium.net.NetError;
  */
 public class AwWebContentsObserver extends WebContentsObserverAndroid {
     private final AwContentsClient mAwContentsClient;
+    private boolean mHasStartedAnyProvisionalLoad = false;
 
     public AwWebContentsObserver(WebContents webContents, AwContentsClient awContentsClient) {
         super(webContents);
@@ -31,6 +32,10 @@ public class AwWebContentsObserver extends WebContentsObserverAndroid {
         mAwContentsClient.didFirstVisuallyNonEmptyPaint();
     }
 //SWE-feature-load-notification
+
+    boolean hasStartedAnyProvisionalLoad() {
+        return mHasStartedAnyProvisionalLoad;
+    }
 
     @Override
     public void didFinishLoad(long frameId, String validatedUrl, boolean isMainFrame) {
@@ -90,4 +95,15 @@ public class AwWebContentsObserver extends WebContentsObserverAndroid {
         mAwContentsClient.onRendererCrash(wasOomProtected);
     }
 // SWE-feature-tab-crash
+
+    @Override
+    public void didStartProvisionalLoadForFrame(
+            long frameId,
+            long parentFrameId,
+            boolean isMainFrame,
+            String validatedUrl,
+            boolean isErrorPage,
+            boolean isIframeSrcdoc) {
+        mHasStartedAnyProvisionalLoad = true;
+    }
 }

@@ -119,6 +119,14 @@ public interface WebContents {
     public String getUrl();
 
     /**
+     * Gets the last committed URL. It represents the current page that is
+     * displayed in this WebContents. It represents the current security context.
+     *
+     * @return The last committed URL.
+     */
+    public String getLastCommittedUrl();
+
+    /**
      * Get the InCognito state of WebContents.
      *
      * @return whether this WebContents is in InCognito mode or not
@@ -165,4 +173,11 @@ public interface WebContents {
     public void evaluateJavaScript(String script, JavaScriptCallback callback,
             boolean startRenderer);
 
+    /**
+     * Returns whether the initial empty page has been accessed by a script from another
+     * page. Always false after the first commit.
+     *
+     * @return Whether the initial empty page has been accessed by a script.
+     */
+    public boolean hasAccessedInitialDocument();
 }

@@ -42,4 +42,8 @@ public abstract class AwWebContentsDelegate extends WebContentsDelegateAndroid {
     // Call in response to a prior runFileChooser call.
     protected static native void nativeFilesSelectedInChooser(int processId, int renderId,
             int mode_flags, String[] filePath, String[] displayName);
+
+    @Override
+    @CalledByNative
+    public abstract void navigationStateChanged(int flags);
 }

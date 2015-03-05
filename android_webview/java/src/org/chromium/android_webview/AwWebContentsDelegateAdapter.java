@@ -11,6 +11,7 @@ import android.os.AsyncTask;
 import android.os.Handler;
 import android.os.Message;
 import android.provider.MediaStore;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
@@ -30,12 +31,14 @@ import org.chromium.content.browser.ContentViewCore;
 class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
     private static final String TAG = "AwWebContentsDelegateAdapter";
 
+    private final AwContents mAwContents;
     final AwContentsClient mContentsClient;
     View mContainerView;
     final Context mContext;
 
-    public AwWebContentsDelegateAdapter(AwContentsClient contentsClient,
+    public AwWebContentsDelegateAdapter(AwContents awContents, AwContentsClient contentsClient,
             View containerView, Context context) {
+        mAwContents = awContents;
         mContentsClient = contentsClient;
         setContainerView(containerView);
         mContext = context;
@@ -213,6 +216,22 @@ class AwWebContentsDelegateAdapter extends AwWebContentsDelegate {
     @Override
     public void activateContents() {
         mContentsClient.onRequestFocus();
+    }
+
+    @Override
+    public void navigationStateChanged(int flags) {
+        if ((flags & INVALIDATE_TYPE_URL) != 0
+                && mAwContents.hasAccessedInitialDocument()
+                && mAwContents.getDidAttemptLoad()) {
+            // Hint the client to show the last committed url, as it may be unsafe to show
+            // the pending entry.
+            String url = mAwContents.getLastCommittedUrl();
+            url = TextUtils.isEmpty(url) ? "about:blank" : url;
+            mContentsClient.onPageStarted(url);
+            mContentsClient.onLoadResource(url);
+            mContentsClient.onProgressChanged(100);
+            mContentsClient.onPageFinished(url);
+        }
     }
 
     @Override
