@@ -188,7 +188,7 @@ public class WebView extends FrameLayout {
 // SWE-feature-backgroundtab
     private Accelerator mAccelerator = null;
     private ContentReadbackHandler mContentReadbackHandler;
-    private HashMap<GetBitmapCallback, ValueCallback<Bitmap>> hCallback = new HashMap<GetBitmapCallback, ValueCallback<Bitmap>>();
+    private HashMap<GetBitmapCallback, ValueCallback<Bitmap>> mAsyncCallbacks = new HashMap<GetBitmapCallback, ValueCallback<Bitmap>>();
 
     public WebView(Context context) {
         this(context, null);
@@ -376,17 +376,19 @@ public class WebView extends FrameLayout {
     private void flushPendingBitmapRequests() {
         // returns null to all callbacks registered to
         // this Webview
-        Set<GetBitmapCallback> set = hCallback.keySet();
-        Iterator<GetBitmapCallback> i = set.iterator();
+        synchronized(mAsyncCallbacks) {
+            Set<GetBitmapCallback> set = mAsyncCallbacks.keySet();
+            Iterator<GetBitmapCallback> i = set.iterator();
 
-        while(i.hasNext()) {
-            GetBitmapCallback mcb= i.next();
-            ValueCallback<Bitmap> cb = hCallback.get(mcb);
-            if  (cb != null) {
-                cb.onReceiveValue(null);
+            while(i.hasNext()) {
+                GetBitmapCallback mcb= i.next();
+                ValueCallback<Bitmap> cb = mAsyncCallbacks.get(mcb);
+                if  (cb != null) {
+                    cb.onReceiveValue(null);
+                }
             }
+            mAsyncCallbacks.clear();
         }
-        hCallback.clear();
     }
 
     public void onResume() {
@@ -606,14 +608,17 @@ public class WebView extends FrameLayout {
         final GetBitmapCallback mycallback = new GetBitmapCallback() {
            @Override
            public void onFinishGetBitmap(Bitmap bitmap) {
-                if (hCallback.containsKey(this)){
-                    callback.onReceiveValue(bitmap);
-                    hCallback.remove(this);
+                synchronized(mAsyncCallbacks) {
+                    if (mAsyncCallbacks.containsKey(this)){
+                        callback.onReceiveValue(bitmap);
+                        mAsyncCallbacks.remove(this);
+                    }
                 }
            }
         };
-
-        hCallback.put(mycallback, callback);
+        synchronized(mAsyncCallbacks) {
+            mAsyncCallbacks.put(mycallback, callback);
+        };
 
         mContentReadbackHandler.getContentBitmapAsync(scale, srcRect,
                                                       mAwContents.getContentViewCore(),
