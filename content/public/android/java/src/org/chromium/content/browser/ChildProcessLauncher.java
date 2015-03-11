@@ -313,6 +313,7 @@ public class ChildProcessLauncher {
         synchronized (ChildProcessLauncher.class) {
             if (sSpareSandboxedConnection != null) {
                 sSpareSandboxedConnection.stop();
+                freeConnection(sSpareSandboxedConnection);
                 sSpareSandboxedConnection = null;
             }
         }
