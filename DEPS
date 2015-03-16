@@ -660,15 +660,6 @@ hooks = [
     "action": ["python", "src/build/util/lastchange.py",
                "-o", "src/build/util/LASTCHANGE"],
   },
-  {
-    # Update LASTCHANGE.blink. This is also run by export_tarball.py in
-    # src/tools/export_tarball - please keep them in sync.
-    "name": "lastchange",
-    "pattern": ".",
-    "action": ["python", "src/build/util/lastchange.py",
-               "-s", "src/third_party/WebKit",
-               "-o", "src/build/util/LASTCHANGE.blink"],
-  },
   # Pull GN binaries. This needs to be before running GYP below.
   {
     "name": "gn_win",

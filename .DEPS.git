@@ -544,21 +544,6 @@ hooks = [
     {
     'action':
          [
-    'python',
-    'src/build/util/lastchange.py',
-    '-s',
-    'src/third_party/WebKit',
-    '-o',
-    'src/build/util/LASTCHANGE.blink'
-],
-    'pattern':
-         '.',
-    'name':
-         'lastchange'
-},
-    {
-    'action':
-         [
     'download_from_google_storage',
     '--no_resume',
     '--platform=win32',
