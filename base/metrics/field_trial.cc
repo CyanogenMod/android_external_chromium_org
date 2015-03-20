@@ -323,8 +323,15 @@ FieldTrial* FieldTrialList::FactoryGetFieldTrialWithRandomizationSeed(
     const FieldTrial::EntropyProvider* entropy_provider =
         GetEntropyProviderForOneTimeRandomization();
     CHECK(entropy_provider);
-    entropy_value = entropy_provider->GetEntropyForTrial(trial_name,
-                                                         randomization_seed);
+    if (entropy_provider) {
+      entropy_value = entropy_provider->GetEntropyForTrial(trial_name,
+                                                           randomization_seed);
+    } else {
+      // We only get to here if this is called before the EntropyProvider is ready.
+      // Since it has happened and been reported from the field, we're going to
+      // provide a recovery for non-debug builds.
+      entropy_value = RandDouble();
+    }
   } else {
     DCHECK_EQ(FieldTrial::SESSION_RANDOMIZED, randomization_type);
     DCHECK_EQ(0U, randomization_seed);
