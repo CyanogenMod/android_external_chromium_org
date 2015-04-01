@@ -765,7 +765,7 @@ int SSLClientSocketOpenSSL::Init() {
   // and HMAC-SHA384 cipher suites, not GCM cipher suites with SHA256 or SHA384
   // as the handshake hash.
   std::string command("DEFAULT:!NULL:!aNULL:!IDEA:!FZA:!SRP:!SHA256:!SHA384:"
-                      "!aECDH:!AESGCM+AES256");
+                      "!aECDH:!AESGCM+AES256:!RC4");
   // Walk through all the installed ciphers, seeing if any need to be
   // appended to the cipher removal |command|.
   for (size_t i = 0; i < sk_SSL_CIPHER_num(ciphers); ++i) {
