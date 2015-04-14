@@ -130,4 +130,10 @@ public class AwContentViewClient extends ContentViewClient {
         mAwContentsClient.webContentsConnected();
     }
 //SWE-feature-reload-tab-oncrash
+
+// SWE-feature-immersive-mode
+    public void onKeyboardStateChange(boolean popup) {
+        mAwContentsClient.onKeyboardStateChange(popup);
+    }
+// SWE-feature-immersive-mode
 }

@@ -2493,6 +2493,14 @@ public class ContentViewCore
         mFocusedNodeEditable = (textInputType != ImeAdapter.getTextInputTypeNone());
         if (!mFocusedNodeEditable) hidePastePopup();
 
+// SWE-feature-immersive-mode
+        if (textInputType == mImeAdapter.getTextInputTypeNone()) {
+            mContentViewClient.onKeyboardStateChange(false);
+        } else if (showImeIfNeeded) {
+            mContentViewClient.onKeyboardStateChange(true);
+        }
+// SWE-feature-immersive-mode
+
         mImeAdapter.updateKeyboardVisibility(
                 nativeImeAdapterAndroid, textInputType, textInputFlags, showImeIfNeeded);
 

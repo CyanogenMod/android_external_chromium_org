@@ -202,4 +202,9 @@ public class ContentViewClient {
     public void webContentsConnected() {
     }
     //SWE-feature-reload-tab-oncrash
+
+    // SWE-feature-immersive-mode
+    public void onKeyboardStateChange(boolean popup) {
+    }
+    // SWE-feature-immersive-mode
 }

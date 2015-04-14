@@ -587,4 +587,9 @@ class AwContentsClientProxy extends AwContentsClient {
     }
 //SWE-feature-load-notification
 
+// SWE-feature-immersive-mode
+    public void onKeyboardStateChange(boolean popup) {
+        mWebViewClient.onKeyboardStateChange(popup);
+    }
+// SWE-feature-immersive-mode
 }

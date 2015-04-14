@@ -131,6 +131,10 @@ public abstract class AwContentsClient {
 
     public abstract void onReceivedSslError(ValueCallback<Boolean> callback, SslError error);
 
+// SWE-feature-immersive-mode
+    public abstract void onKeyboardStateChange(boolean popup);
+// SWE-feature-immersive-mode
+
     // TODO(sgurun): Make abstract once this has rolled in downstream.
     public void onReceivedClientCertRequest(
             final AwContentsClientBridge.ClientCertificateRequestCallback callback,

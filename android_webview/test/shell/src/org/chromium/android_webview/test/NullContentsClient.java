@@ -297,4 +297,9 @@ public class NullContentsClient extends AwContentsClient {
         return false;
     }
 // SWE-feature-progress-optimization
+
+// SWE-feature-immersive-mode
+    public void onKeyboardStateChange(boolean popup) {
+    }
+// SWE-feature-immersive-mode
 }

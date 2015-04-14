@@ -171,4 +171,6 @@ public class WebViewClient {
     public void onRendererCrash(WebView view, boolean crashedWhileOomProtected) {
     }
 
+    public void onKeyboardStateChange(boolean popup) {
+    }
 }
