@@ -32,6 +32,7 @@ package org.codeaurora.swe;
 
 import org.chromium.android_webview.AwSettings;
 import org.chromium.base.CommandLine;
+import org.chromium.base.ContentUriUtils;
 import org.chromium.base.PathUtils;
 import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.base.library_loader.ProcessInitException;
@@ -53,9 +54,12 @@ import org.codeaurora.swe.GeolocationPermissions;
 import org.codeaurora.swe.utils.Logger;
 
 import android.content.Context;
+import android.content.ContentResolver;
 import android.content.res.Resources;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.AsyncTask;
+import android.provider.MediaStore;
 import android.util.Log;
 
 import java.io.File;
@@ -332,6 +336,18 @@ public final class Engine {
     public interface StartupCallback {
         void onSuccess(boolean alreadyStarted);
         void onFailure();
+    }
+
+     /**
+     * @return the display name of a path if it is a content URI and is present in the database
+     * or an empty string otherwise.
+     */
+    public static String getContentUriDisplayName(String filePath) {
+        ContentResolver contentResolver = mContext.getContentResolver();
+        if (contentResolver == null || filePath == null) return "";
+        Uri uri = Uri.parse(filePath);
+        return ContentUriUtils.getDisplayName(
+                    uri, contentResolver, MediaStore.MediaColumns.DISPLAY_NAME);
     }
 
 }
