@@ -189,7 +189,9 @@ public final class Engine {
     }
 
     public static void warmUpChildProcess(Context context) {
-        ChildProcessLauncher.warmUp(context);
+        if (!CommandLine.getInstance().hasSwitch(SINGLE_PROCESS_SWITCH)) {
+            ChildProcessLauncher.warmUp(context);
+        }
     }
 
     public static void releaseSpareChildProcess() {
