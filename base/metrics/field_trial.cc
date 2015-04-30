@@ -322,7 +322,7 @@ FieldTrial* FieldTrialList::FactoryGetFieldTrialWithRandomizationSeed(
   if (randomization_type == FieldTrial::ONE_TIME_RANDOMIZED) {
     const FieldTrial::EntropyProvider* entropy_provider =
         GetEntropyProviderForOneTimeRandomization();
-    CHECK(entropy_provider);
+    DCHECK(entropy_provider);
     if (entropy_provider) {
       entropy_value = entropy_provider->GetEntropyForTrial(trial_name,
                                                            randomization_seed);
