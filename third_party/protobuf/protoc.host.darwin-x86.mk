@@ -5,7 +5,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE_CLASS := EXECUTABLES
 LOCAL_MODULE := third_party_protobuf_protoc_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp
 LOCAL_MODULE_STEM := protoc
-LOCAL_MODULE_SUFFIX := 
+LOCAL_MODULE_SUFFIX :=
 LOCAL_IS_HOST_MODULE := true
 LOCAL_MULTILIB := $(GYP_HOST_MULTILIB)
 gyp_intermediate_dir := $(call local-intermediates-dir,,$(GYP_HOST_VAR_PREFIX))
@@ -228,12 +228,12 @@ LOCAL_ASFLAGS := $(LOCAL_CFLAGS)
 ### Rules for final target.
 
 LOCAL_LDFLAGS_Debug := \
-	-pthread \
+	-Wl,-lstdc++ \
 	-fPIC
 
 
 LOCAL_LDFLAGS_Release := \
-	-pthread \
+	-Wl,-lstdc++ \
 	-fPIC
 
 
