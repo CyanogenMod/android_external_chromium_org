@@ -100,7 +100,7 @@ public class AwSettings {
     private float mInitialPageScalePercent = 0;
     private boolean mSpatialNavigationEnabled;  // Default depends on device features.
     private boolean mEnableSupportedHardwareAcceleratedFeatures = false;
-    private int mMixedContentMode = MIXED_CONTENT_NEVER_ALLOW;
+    private int mMixedContentMode = MIXED_CONTENT_COMPATIBILITY_MODE;
     private boolean mVideoOverlayForEmbeddedVideoEnabled = false;
 
     // Although this bit is stored on AwSettings it is actually controlled via the CookieManager.
