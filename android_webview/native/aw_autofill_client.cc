@@ -228,6 +228,7 @@ std::string AwAutofillClient::AddOrUpdateProfile(jstring guid, jstring name_full
   AutofillProfile* profile = NULL;
   JNIEnv* env = AttachCurrentThread();
   std::string str_guid = ConvertJavaStringToUTF8(env,guid);
+
   // Check if we have an already existing profile with the GUID
   profile = GetPersonalDataManager()->GetProfileByGUID(str_guid);
   bool already;
@@ -264,13 +265,18 @@ void AwAutofillClient::RemoveProfileByGUID(jstring guid) {
   JNIEnv* env = AttachCurrentThread();
   std::string str_guid = ConvertJavaStringToUTF8(env,guid);
   LOG(INFO) << "AwAutofillClient::RemoveProfileByGUID " << str_guid;
-  personal_data_->RemoveByGUID(str_guid);
+  GetPersonalDataManager()->RemoveByGUID(str_guid);
 }
 
 ScopedJavaLocalRef<jobject> AwAutofillClient::GetProfileByGUID(jstring guid) {
   JNIEnv* env = AttachCurrentThread();
   AutofillProfile* profile = NULL;
   ScopedJavaLocalRef<jobject> jprofile;
+
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return jprofile;
+
   if (!GetPersonalDataManager()->IsDataLoaded()) {
     LOG(INFO) << "Profiles not loaded yet....";
   } else {
@@ -310,13 +316,18 @@ ScopedJavaLocalRef<jobject> AwAutofillClient::GetProfileByGUID(jstring guid) {
 
 ScopedJavaLocalRef<jobjectArray> AwAutofillClient::GetAllAutoFillProfiles() {
   JNIEnv* env = AttachCurrentThread();
-  size_t count =  personal_data_->web_profiles().size();
+  size_t count =  GetPersonalDataManager()->web_profiles().size();
   ScopedJavaLocalRef<jobjectArray> data_array =
       Java_AwAutofillClient_createAutoFillProfileArray(env, count);
+
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null() || !GetPersonalDataManager())
+    return data_array;
+
   count = 0;
   for (std::vector<AutofillProfile*>::const_iterator i =
-           personal_data_->web_profiles().begin();
-       i != personal_data_->web_profiles().end(); ++i) {
+           GetPersonalDataManager()->web_profiles().begin();
+       i != GetPersonalDataManager()->web_profiles().end(); ++i) {
     LOG(INFO) << "profile guid :" << (*i)->guid();
     ScopedJavaLocalRef<jstring> guid =
       ConvertUTF8ToJavaString(env, (*i)->guid());
@@ -350,10 +361,10 @@ ScopedJavaLocalRef<jobjectArray> AwAutofillClient::GetAllAutoFillProfiles() {
 
 void AwAutofillClient::RemoveAllAutoFillProfiles() {
   for (std::vector<AutofillProfile*>::const_iterator i =
-           personal_data_->web_profiles().begin();
-       i != personal_data_->web_profiles().end(); ++i) {
+           GetPersonalDataManager()->web_profiles().begin();
+       i != GetPersonalDataManager()->web_profiles().end(); ++i) {
       LOG(INFO) << "Removing profile guid :" << (*i)->guid();
-      personal_data_->RemoveByGUID((*i)->guid());
+      GetPersonalDataManager()->RemoveByGUID((*i)->guid());
   }
 }
 // SWE-feature-autofill-profile
