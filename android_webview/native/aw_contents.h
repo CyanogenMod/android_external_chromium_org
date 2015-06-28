@@ -208,6 +208,7 @@ class AwContents : public FindHelper::Listener,
   void ClearCache(JNIEnv* env, jobject obj, jboolean include_disk_files);
   void SetPendingWebContentsForPopup(scoped_ptr<content::WebContents> pending);
   jlong ReleasePopupAwContents(JNIEnv* env, jobject obj);
+  void RestoreInputHandler(JNIEnv* env, jobject obj);
 
   void ScrollTo(JNIEnv* env, jobject obj, jint x, jint y);
   void SetDipScale(JNIEnv* env, jobject obj, jfloat dip_scale);

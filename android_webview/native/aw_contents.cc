@@ -1018,6 +1018,12 @@ jlong AwContents::ReleasePopupAwContents(JNIEnv* env, jobject obj) {
   return reinterpret_cast<intptr_t>(pending_contents_.release());
 }
 
+void AwContents::RestoreInputHandler(JNIEnv* env, jobject obj) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  content::SynchronousCompositor::RestorePendingInputHandler(
+      web_contents_.get());
+}
+
 gfx::Point AwContents::GetLocationOnScreen() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JNIEnv* env = AttachCurrentThread();

@@ -69,6 +69,8 @@ class CONTENT_EXPORT SynchronousCompositor {
   // behavior.
   static void SetRecordFullDocument(bool record_full_document);
 
+  static void RestorePendingInputHandler(WebContents* contents);
+
   // Synchronously initialize compositor for hardware draw. Can only be called
   // while compositor is in software only mode, either after compositor is
   // first created or after ReleaseHwDraw is called. It is invalid to

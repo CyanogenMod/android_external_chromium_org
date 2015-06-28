@@ -52,8 +52,12 @@ void SynchronousInputEventFilter::DidAddInputHandler(
   // bound to has already been deleted.
   SynchronousCompositorImpl* compositor =
       SynchronousCompositorImpl::FromRoutingID(routing_id);
-  if (compositor)
+  if (compositor) {
     compositor->SetInputHandler(input_handler);
+  } else {
+    SynchronousCompositorImpl::SavePendingInputHandler(
+        input_handler, routing_id);
+  }
 }
 
 void SynchronousInputEventFilter::DidRemoveInputHandler(int routing_id) {
@@ -61,8 +65,11 @@ void SynchronousInputEventFilter::DidRemoveInputHandler(int routing_id) {
   // bound to has already been deleted.
   SynchronousCompositorImpl* compositor =
       SynchronousCompositorImpl::FromRoutingID(routing_id);
-  if (compositor)
+  if (compositor) {
     compositor->SetInputHandler(NULL);
+  } else {
+    SynchronousCompositorImpl::RemovePendingInputHandler(routing_id);
+  }
 }
 
 void SynchronousInputEventFilter::DidOverscroll(

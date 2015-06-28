@@ -39,6 +39,10 @@ int GetInProcessRendererId() {
 base::LazyInstance<SynchronousCompositorFactoryImpl>::Leaky g_factory =
     LAZY_INSTANCE_INITIALIZER;
 
+typedef std::map<WebContents*, cc::InputHandler*> InputHandlerMap;
+static base::LazyInstance<InputHandlerMap> g_pending_input_handler_map =
+    LAZY_INSTANCE_INITIALIZER;
+
 }  // namespace
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(SynchronousCompositorImpl);
@@ -60,6 +64,32 @@ SynchronousCompositorImpl* SynchronousCompositorImpl::FromID(int process_id,
 SynchronousCompositorImpl* SynchronousCompositorImpl::FromRoutingID(
     int routing_id) {
   return FromID(GetInProcessRendererId(), routing_id);
+}
+
+// static
+void SynchronousCompositorImpl::SavePendingInputHandler(
+    cc::InputHandler* handler,
+    int routing_id) {
+  RenderViewHost* rvh = RenderViewHost::FromID(
+      GetInProcessRendererId(), routing_id);
+  if (!rvh)
+    return;
+  WebContents* contents = WebContents::FromRenderViewHost(rvh);
+  if (!contents)
+    return;
+  g_pending_input_handler_map.Get().insert(std::make_pair(contents, handler));
+}
+
+// static
+void SynchronousCompositorImpl::RemovePendingInputHandler(int routing_id) {
+  RenderViewHost* rvh = RenderViewHost::FromID(
+      GetInProcessRendererId(), routing_id);
+  if (!rvh)
+    return;
+  WebContents* contents = WebContents::FromRenderViewHost(rvh);
+  if (!contents)
+    return;
+  g_pending_input_handler_map.Get().erase(contents);
 }
 
 SynchronousCompositorImpl::SynchronousCompositorImpl(WebContents* contents)
@@ -299,6 +329,21 @@ void SynchronousCompositor::SetClientForWebContents(
   if (SynchronousCompositorImpl* instance =
       SynchronousCompositorImpl::FromWebContents(contents)) {
     instance->SetClient(client);
+  }
+}
+
+void SynchronousCompositor::RestorePendingInputHandler(WebContents* contents) {
+  DCHECK(contents);
+  SynchronousCompositorImpl* instance =
+      SynchronousCompositorImpl::FromWebContents(contents);
+  DCHECK(instance);
+  InputHandlerMap* handler_map = g_pending_input_handler_map.Pointer();
+  InputHandlerMap::iterator it = handler_map->find(contents);
+  if (it != handler_map->end()) {
+    cc::InputHandler* input_handler = it->second;
+    instance->SetInputHandler(input_handler);
+
+    g_pending_input_handler_map.Get().erase(contents);
   }
 }
 

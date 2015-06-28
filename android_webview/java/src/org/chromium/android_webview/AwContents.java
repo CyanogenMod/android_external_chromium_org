@@ -816,6 +816,8 @@ public class AwContents implements SmartClipProvider {
 
         setNewAwContents(popupNativeAwContents);
 
+        nativeRestoreInputHandler(mNativeAwContents);
+
         // Finally refresh all view state for mContentViewCore and mNativeAwContents.
         if (!wasPaused) onResume();
         if (wasAttached) {
@@ -2517,4 +2519,6 @@ public class AwContents implements SmartClipProvider {
 
     private native void nativePreauthorizePermission(long nativeAwContents, String origin,
             long resources);
+
+    private native void nativeRestoreInputHandler(long nativeAwContents);
 }

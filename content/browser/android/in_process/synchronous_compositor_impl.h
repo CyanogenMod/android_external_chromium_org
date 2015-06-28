@@ -43,6 +43,10 @@ class SynchronousCompositorImpl
   // is implicitly that of the in-process renderer.
   static SynchronousCompositorImpl* FromRoutingID(int routing_id);
 
+  static void SavePendingInputHandler(cc::InputHandler* handler,
+                                      int routing_id);
+  static void RemovePendingInputHandler(int routing_id);
+
   InputEventAckState HandleInputEvent(const blink::WebInputEvent& input_event);
 
   // SynchronousCompositor
